@@ -1,0 +1,106 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseEpisodeTitle, parseFeed, normaliseSpeaker, parseDuration } from "../lib/podbean-parse";
+import { parseCsv } from "../lib/csv";
+import { mapSheet, splitAssignee } from "../lib/sheet-map";
+import { parseDayMonthYear, formatDate } from "../lib/dates";
+
+const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+test("episode title with date, title and speaker", () => {
+  const p = parseEpisodeTitle("02-09-2026 Knowing God and Living Out the Kingdom Pastor Olakunle Zakariya");
+  assert.equal(day(p.date), "2026-09-02");
+  assert.equal(p.title, "Knowing God and Living Out the Kingdom");
+  assert.equal(p.speaker, "Pastor Olakunle Zakariya");
+  assert.deepEqual(p.missing, []);
+});
+
+test("episode title with separators and a series part", () => {
+  const p = parseEpisodeTitle("30-08-2026 | Jesus, King of the North | Finale | Pst. Adesola Zakariya");
+  assert.equal(p.title, "Jesus, King of the North | Finale");
+  assert.equal(p.speaker, "Pastor Adesola Zakariya");
+});
+
+test("two-digit year and abbreviated title", () => {
+  const p = parseEpisodeTitle("21-06-26 Saved to Fight III Pst Olakunle Zakariya");
+  assert.equal(day(p.date), "2026-06-21");
+  assert.equal(p.title, "Saved to Fight III");
+  assert.equal(p.speaker, "Pastor Olakunle Zakariya");
+});
+
+test("placeholder titles need details", () => {
+  assert.deepEqual(parseEpisodeTitle("no title or date").missing, ["title", "date"]);
+  assert.deepEqual(parseEpisodeTitle("Deji did not put date and title").missing, ["title", "date"]);
+  assert.deepEqual(parseEpisodeTitle("23-07-2026").missing, ["title"]);
+  assert.deepEqual(parseEpisodeTitle("The Mindset of a Believer").missing, ["date"]);
+});
+
+test("speaker names come out in one form", () => {
+  assert.equal(normaliseSpeaker("Pst. Olakunle Zakariya"), "Pastor Olakunle Zakariya");
+  assert.equal(normaliseSpeaker("Pastor PK Olawale"), "Pastor P.K. Olawale");
+  assert.equal(normaliseSpeaker("Pastor P.K. Olawale"), "Pastor P.K. Olawale");
+  assert.equal(normaliseSpeaker("Aps. Brandon Bailey"), "Apostle Brandon Bailey");
+});
+
+test("feed items", () => {
+  const xml = `<rss><channel><title>GCCC</title>
+  <item><title><![CDATA[02-09-2026 Knowing God &amp; the Kingdom Pastor Olakunle Zakariya]]></title>
+  <link>https://gcccpodcasts.podbean.com/e/02-09-2026-x/</link>
+  <guid isPermaLink="false">gcccpodcasts.podbean.com/abc</guid>
+  <pubDate>Wed, 03 Sep 2026 10:00:00 +0100</pubDate>
+  <enclosure url="https://mcdn.podbean.com/mf/web/abc/file.mp3" length="1" type="audio/mpeg"/>
+  <itunes:duration>01:12:30</itunes:duration></item>
+  </channel></rss>`;
+  const [e] = parseFeed(xml);
+  assert.equal(e.guid, "gcccpodcasts.podbean.com/abc");
+  assert.equal(e.title, "02-09-2026 Knowing God & the Kingdom Pastor Olakunle Zakariya");
+  assert.equal(e.audioUrl, "https://mcdn.podbean.com/mf/web/abc/file.mp3");
+  assert.equal(e.durationSec, 4350);
+  assert.equal(parseDuration("3600"), 3600);
+});
+
+test("dates", () => {
+  assert.equal(day(parseDayMonthYear("09-08-2028")), "2028-08-09");
+  assert.equal(parseDayMonthYear("31-02-2026"), null);
+  assert.equal(formatDate(new Date(Date.UTC(2026, 8, 2))), "2 Sep 2026");
+});
+
+test("assignee with month", () => {
+  assert.deepEqual(splitAssignee("VICTOR and Hannie(October)"), { name: "Victor and Hannie", due: "October" });
+  assert.deepEqual(splitAssignee("SHOLA"), { name: "Shola", due: null });
+});
+
+test("sheet export with a dashboard above the table", () => {
+  const csv = [
+    "CENTRAL CONTENT SYSTEM OVERVIEW,,,",
+    "TOTAL MESSAGES,TRANSCRIBED,,",
+    "1386,401,,",
+    "",
+    'ID,Date,Title,Speaker,Location,Series,Original Message Link,Transcription status,Transcription link,Message Summary,Glory Home Manual Status,Glory Home Manual Link,Teachers Guide Link,Writer,Manual Code,Manual Topic,Tract potential,Book/booklet potential,Related themes,Assigned person,Current stage,Final content link,Language adaptation status',
+    '86,12-03-2026,Navigating Spiritual Order,Pst. Olakunle Zakariya,"Ojodu, Lagos, Nigeria",Word of God & Kingdom Teachings,https://gcccpodcasts.podbean.com/e/12-03-2026-x/,Done,https://docs.google.com/document/d/1/edit,,,,,,,The Most Important Prayer You Will Pray,,,"Prayer, Order",NDIFREKE(September),,,',
+    '82,22-03-2026,Sonship in Christ,Pst. Olakunle Zakariya,"Ojodu, Lagos, Nigeria",Word of God & Kingdom Teachings,https://gcccpodcasts.podbean.com/e/22-03-2026/,,,,,,,,,,,,,VICTOR and Hannie(October),,,',
+    ',,,,,,,,,,,,,,,,,,,,,,',
+  ].join("\n");
+  const { rows, error } = mapSheet(parseCsv(csv));
+  assert.equal(error, undefined);
+  assert.equal(rows.length, 2);
+  const [a, b] = rows;
+  assert.equal(a.legacyId, 86);
+  assert.equal(a.transcribed, true);
+  assert.equal(a.speaker, "Pastor Olakunle Zakariya");
+  assert.equal(a.location, "Ojodu, Lagos, Nigeria");
+  assert.deepEqual(a.themes, ["Prayer", "Order"]);
+  assert.equal(a.assigneeName, "Ndifreke");
+  assert.equal(a.manual?.title, "The Most Important Prayer You Will Pray");
+  assert.equal(b.transcribed, false);
+  assert.equal(b.dueLabel, "October");
+  assert.equal(b.manual, null);
+});
+
+test("future dates and overdue months", async () => {
+  const { monthOverdue } = await import("../lib/dates");
+  const now = new Date(Date.UTC(2026, 10, 9));
+  assert.equal(monthOverdue("October", now), true);
+  assert.equal(monthOverdue("November", now), false);
+  assert.equal(monthOverdue("Soon", now), false);
+});

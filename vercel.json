@@ -1,0 +1,40 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/work",
+      "schedule": "0 21 * * *"
+    }
+  ]
+}

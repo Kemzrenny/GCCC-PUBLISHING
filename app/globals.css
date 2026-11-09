@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/* Dark mode follows the theme the person picked (a cookie), not the device setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Fonts are served from the portal itself: Clash Display for headings and big numbers,
+   Poppins for everything else (the pairing on gloryrealmsministries.org). */
+@font-face {
+  font-family: "Clash Display";
+  src: url("/fonts/ClashDisplay-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Poppins";
+  src: url("/fonts/Poppins-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+/* GCCC colours. The brand blue (#4295D3) marks the active place and progress; a deeper
+   shade carries white text on buttons so the label stays readable. Red is kept for the
+   few things that need attention. */
+:root {
+  --bg: #f6f5f1;
+  --side: #f6f5f1;
+  --card: #ffffff;
+  --line: #e5e3dc;
+  --ink: #141416;
+  --muted: #5a5c66;
+  --nav: #2a2b30;
+  --nav-on: #e3eef8;
+  --banner: #e6f0f9;
+  --field: #efede7;
+  --seg: #f1efe9;
+  --seg-on: #ffffff;
+  --track: #eceae3;
+  --accent: #2b74b0;
+  --brand: #4295d3;
+  --button: #2b74b0;
+  --button-hover: #23649a;
+  --red: #d94540;
+  --alert: #b3302a;
+  --chip-grey-bg: #efede7;
+  --chip-grey: #4f515a;
+  --chip-slate-bg: #eef0f4;
+  --chip-slate: #3e4a5c;
+  --chip-blue-bg: #e2effa;
+  --chip-blue: #1f65a0;
+  --chip-red-bg: #fbe6e5;
+  --chip-red: #b3302a;
+  --chip-green-bg: #e3f2e6;
+  --chip-green: #1e6b33;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #141416;
+  --side: #141416;
+  --card: #1e1f24;
+  --line: #2c2d33;
+  --ink: #f6f5f1;
+  --muted: #a9abb5;
+  --nav: #d2d3d9;
+  --nav-on: #1f2d3b;
+  --banner: #1b2633;
+  --field: #26272d;
+  --seg: #141416;
+  --seg-on: #33343b;
+  --track: #2c2d33;
+  --accent: #7db8e8;
+  --red: #ff6b63;
+  --alert: #ff8a80;
+  --chip-grey-bg: #2a2b31;
+  --chip-grey: #bfc1c9;
+  --chip-slate-bg: #262a33;
+  --chip-slate: #b7c0ce;
+  --chip-blue-bg: #1b2b3b;
+  --chip-blue: #8ec3ee;
+  --chip-red-bg: #3b1c1a;
+  --chip-red: #ff8a80;
+  --chip-green-bg: #1d3324;
+  --chip-green: #7fd39a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-side: var(--side);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-nav: var(--nav);
+  --color-nav-on: var(--nav-on);
+  --color-banner: var(--banner);
+  --color-field: var(--field);
+  --color-seg: var(--seg);
+  --color-seg-on: var(--seg-on);
+  --color-track: var(--track);
+  --color-accent: var(--accent);
+  --color-brand: var(--brand);
+  --color-button: var(--button);
+  --color-button-hover: var(--button-hover);
+  --color-red: var(--red);
+  --color-alert: var(--alert);
+  --font-sans: "Poppins", system-ui, sans-serif;
+  --font-display: "Clash Display", "Poppins", system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Shared pieces, so every screen's buttons and fields look the same. */
+@utility btn {
+  @apply inline-flex h-11 items-center justify-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-primary {
+  @apply btn bg-button text-white hover:bg-button-hover;
+}
+@utility btn-quiet {
+  @apply btn border border-line bg-card text-ink hover:bg-field;
+}
+@utility btn-danger {
+  @apply btn border border-line bg-card text-alert hover:bg-field;
+}
+@utility field {
+  @apply h-11 w-full rounded-[10px] border border-line bg-field px-3 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
+}
+@utility label {
+  @apply mb-1.5 block text-xs font-medium text-muted;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-card;
+}
+@utility eyebrow {
+  @apply text-[13px] font-medium tracking-[0.04em] text-accent uppercase;
+}
+@utility link {
+  @apply font-medium text-accent hover:underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}

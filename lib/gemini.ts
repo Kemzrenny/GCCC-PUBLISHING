@@ -1,0 +1,174 @@
+import "server-only";
+import { GoogleGenAI } from "@google/genai";
+import { randomUUID } from "crypto";
+import { writeFile, unlink } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { z } from "zod";
+
+// Gemini, set up the way The Doer Life uses it: the interactions API, a light model for
+// short work, a careful one where accuracy matters, and a fallback when one is busy.
+
+export class GeminiError extends Error {
+  kind: "rate_limit" | "audio_unreadable" | "invalid_output" | "other";
+  constructor(kind: GeminiError["kind"], message: string) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+let client: GoogleGenAI | null = null;
+function ai(): GoogleGenAI {
+  if (!process.env.GEMINI_API_KEY) throw new GeminiError("other", "GEMINI_API_KEY is not set.");
+  client ??= new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY,
+    httpOptions: { retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 2 } },
+  });
+  return client;
+}
+
+export const geminiConfigured = () => !!process.env.GEMINI_API_KEY;
+
+const PRIMARY_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.5-flash-lite";
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL ?? "gemini-3.1-flash-lite";
+const CAREFUL_MODEL = process.env.GEMINI_CAREFUL_MODEL ?? "gemini-3.5-flash";
+
+type InteractionsInput = Parameters<GoogleGenAI["interactions"]["create"]>[0]["input"];
+
+function errorStatus(err: unknown): number | undefined {
+  const status = (err as { status?: unknown })?.status;
+  if (typeof status === "number") return status;
+  const m = (err instanceof Error ? err.message : "").match(/^\D*(\d{3})\b/);
+  return m ? Number(m[1]) : undefined;
+}
+
+function classify(err: unknown): GeminiError {
+  if (err instanceof GeminiError) return err;
+  const message = err instanceof Error ? err.message : "Gemini request failed.";
+  if (errorStatus(err) === 429 || /rate limit|quota/i.test(message)) return new GeminiError("rate_limit", message);
+  if (/audio/i.test(message) && /unsupported|invalid|decode|corrupt|unable|cannot/i.test(message)) {
+    return new GeminiError("audio_unreadable", message);
+  }
+  return new GeminiError("other", message);
+}
+
+async function callGemini(input: InteractionsInput, schema?: object, model = PRIMARY_MODEL): Promise<{ text: string; model: string }> {
+  let current = model;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const interaction = await ai().interactions.create({
+        model: current,
+        input,
+        response_format: schema ? { type: "text", mime_type: "application/json", schema } : undefined,
+      });
+      const text = interaction.output_text?.trim();
+      if (!text) throw new GeminiError("invalid_output", "Gemini returned nothing.");
+      return { text, model: current };
+    } catch (err) {
+      lastError = err;
+      const status = errorStatus(err);
+      const transient = status === undefined || status === 429 || status >= 500;
+      if (!transient) break;
+      // A busy or rate-limited model: try the other one, then wait a little between tries.
+      if (current !== FALLBACK_MODEL) current = FALLBACK_MODEL;
+      else await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+  }
+  throw classify(lastError);
+}
+
+async function uploadAudio(buffer: Buffer, mimeType: string) {
+  const tmpPath = path.join(tmpdir(), `${randomUUID()}.audio`);
+  await writeFile(tmpPath, buffer);
+  try {
+    const uploaded = await ai().files.upload({ file: tmpPath, config: { mimeType } });
+    const filesApi = ai().files as unknown as { get: (a: { name: string }) => Promise<{ state?: unknown }> };
+    let state: unknown = uploaded.state;
+    for (let i = 0; i < 20 && uploaded.name && String(state ?? "").toUpperCase() === "PROCESSING"; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      state = (await filesApi.get({ name: uploaded.name })).state;
+    }
+    return { type: "audio" as const, uri: uploaded.uri, mime_type: uploaded.mimeType };
+  } catch (err) {
+    throw classify(err);
+  } finally {
+    await unlink(tmpPath).catch(() => {});
+  }
+}
+
+export const NO_SPEECH = "[no speech]";
+
+const TRANSCRIBE_INSTRUCTION = `Transcribe this part of a sermon recorded at Glory Centre Community Church (GCCC), Lagos, Nigeria.
+- Write exactly what is said, word for word, in the language spoken. Keep Yoruba or Pidgin phrases as spoken. Do not summarize, correct the theology, or add commentary.
+- Break the text into paragraphs at natural pauses or topic changes.
+- Write Bible references as standard references (e.g. "John 3:16") and quote scripture as it is read aloud.
+- Leave out timestamps, speaker labels and headings. If the congregation responds aloud (e.g. "Amen"), you may include it in brackets.
+- If a word is unclear, write your best guess followed by [?].
+- If there is no intelligible speech, respond with exactly: ${NO_SPEECH}
+Respond with the transcript text only.`;
+
+// Speech runs about 15 characters a second; far more means the model is looping.
+const MAX_CHARS_PER_SECOND = 60;
+
+export async function geminiTranscribe(buffer: Buffer, mimeType: string, durationSec?: number) {
+  const audio = await uploadAudio(buffer, mimeType);
+  // Parts are about 10 minutes, where the light model is fast and clean. Anything long or of
+  // unknown length goes to the careful model, which drifts less.
+  const long = !durationSec || durationSec > 15 * 60;
+  const { text, model } = await callGemini([{ type: "text", text: TRANSCRIBE_INSTRUCTION }, audio], undefined, long ? CAREFUL_MODEL : PRIMARY_MODEL);
+  if (durationSec && text.length > durationSec * MAX_CHARS_PER_SECOND + 2000) {
+    throw new GeminiError("invalid_output", "The transcript came back garbled.");
+  }
+  return { text: text === NO_SPEECH ? "" : text, model };
+}
+
+const analysisSchema = {
+  type: "object",
+  properties: {
+    suggestedTitle: { type: "string", description: "A short title for this message in the preacher's own words, as it would appear on Podbean. Under 10 words." },
+    summary: { type: "string", description: "4-6 sentences on what the message taught, in order, naming the main scriptures and illustrations." },
+    themes: { type: "array", items: { type: "string" }, description: "3-6 short themes (one to three words each), e.g. 'Sonship', 'Prayer', 'Kingdom living'." },
+    scriptures: { type: "array", items: { type: "string" }, description: "Bible references actually read or cited, in standard form (e.g. 'Romans 8:14'). Leave out guesses." },
+    tractPotential: { type: "boolean", description: "True if one central truth here could stand alone as a short evangelistic or teaching tract." },
+    bookPotential: { type: "boolean", description: "True if this is a substantial teaching that could be a book chapter or anchor a booklet." },
+  },
+  required: ["suggestedTitle", "summary", "themes", "scriptures", "tractPotential", "bookPotential"],
+};
+
+const analysisResult = z.object({
+  suggestedTitle: z.string(),
+  summary: z.string().min(1),
+  themes: z.array(z.string()),
+  scriptures: z.array(z.string()),
+  tractPotential: z.boolean(),
+  bookPotential: z.boolean(),
+});
+
+export type Analysis = z.infer<typeof analysisResult>;
+
+const ANALYSIS_INSTRUCTION = `You document sermons for the Publishing team of Glory Realms Ministries (Glory Centre Community Church, Lagos).
+Read the transcript and describe it faithfully: only what was actually said, no generic devotional language.
+Never use em dashes or en dashes; use commas, colons or full stops.
+Respond only with the JSON described by the schema.`;
+
+// Transcripts can be long (an hour of preaching is ~50,000 characters); the model reads
+// them whole, but very long ones are trimmed from the middle to stay within limits.
+export async function analyseTranscript(text: string, context: { title?: string | null; speaker?: string | null }): Promise<Analysis> {
+  const LIMIT = 400_000;
+  const body = text.length > LIMIT ? `${text.slice(0, LIMIT / 2)}\n[...]\n${text.slice(-LIMIT / 2)}` : text;
+  const header = [context.title ? `Title on file: ${context.title}` : "", context.speaker ? `Speaker: ${context.speaker}` : ""].filter(Boolean).join("\n");
+  const { text: out } = await callGemini(
+    [
+      { type: "text", text: ANALYSIS_INSTRUCTION },
+      { type: "text", text: `${header}\n\nTranscript:\n\n${body}` },
+    ],
+    analysisSchema,
+    CAREFUL_MODEL
+  );
+  try {
+    return analysisResult.parse(JSON.parse(out));
+  } catch {
+    throw new GeminiError("invalid_output", "Gemini's analysis didn't match the expected shape.");
+  }
+}

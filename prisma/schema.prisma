@@ -1,0 +1,210 @@
+// GCCC Publishing Portal. Messages come in from Podbean (or the one-time import of the
+// old Publishing sheet); each gets a transcript that AI drafts and a person reviews.
+// Everything the team makes from a message (manuals now; books, tracts later) links back.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN // everything, including team and settings
+  REVIEWER // edits and approves transcripts, fixes message details
+  WRITER // reads everything, works on manuals and books (Phase 2+)
+  VIEWER // reads only
+}
+
+enum TranscriptStatus {
+  NOT_STARTED
+  QUEUED
+  TRANSCRIBING
+  AI_DRAFT // AI finished; waiting for a person
+  IN_REVIEW // a reviewer has opened it and started editing
+  APPROVED
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id                String              @id @default(uuid())
+  email             String              @unique
+  name              String
+  passwordHash      String
+  role              Role                @default(VIEWER)
+  createdAt         DateTime            @default(now())
+  lastActiveAt      DateTime?
+  disabledAt        DateTime?
+  passwordChangedAt DateTime?
+  reviews           Transcript[]        @relation("TranscriptReviewer")
+  versions          TranscriptVersion[]
+  assigned          Message[]           @relation("MessageAssignee")
+  edits             MessageEdit[]
+}
+
+// Sign-up is by invitation: an admin adds the email and role, then that person creates
+// their account. The first admin comes from ADMIN_EMAILS.
+model Invite {
+  email       String   @id
+  role        Role     @default(VIEWER)
+  createdAt   DateTime @default(now())
+  invitedById String?
+}
+
+model Message {
+  id           String  @id @default(uuid())
+  // The "ID" column of the old sheet, kept so rows can be matched back.
+  legacyId     Int?    @unique
+  // Podbean's id for the episode, and its page. Either can match an import to an episode.
+  podbeanGuid  String? @unique
+  sourceUrl    String? @unique
+  audioUrl     String?
+  durationSec  Int?
+  // What Podbean said, before anyone corrected it.
+  podbeanTitle String?
+
+  title    String
+  date     DateTime? @db.Date
+  speaker  String?
+  location String?
+  series   String?
+
+  // Set when Podbean's title gave no usable title or date. Cleared when someone confirms.
+  needsDetails   Boolean @default(false)
+  // Once a person edits the details, later Podbean checks never overwrite them.
+  detailsLocked  Boolean @default(false)
+  // A title the AI suggested from the transcript, offered when Podbean's was unusable.
+  suggestedTitle String?
+
+  status                TranscriptStatus @default(NOT_STARTED)
+  // A transcript that lives outside the portal (the old sheet's "Transcription link").
+  externalTranscriptUrl String?
+
+  // Filled by AI after the transcript is approved (or drafted), editable by people.
+  summary        String?
+  themes         String[] @default([])
+  scriptures     String[] @default([])
+  tractPotential Boolean  @default(false)
+  bookPotential  Boolean  @default(false)
+
+  // Who is responsible for the transcript. assigneeName keeps names from the old sheet
+  // ("VICTOR and Hannie") that aren't portal accounts.
+  assigneeId   String?
+  assignee     User?     @relation("MessageAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeName String?
+  dueDate      DateTime? @db.Date
+  dueLabel     String?
+
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  transcript Transcript?
+  jobs       TranscriptionJob[]
+  manuals    Manual[]
+  edits      MessageEdit[]
+
+  @@index([date])
+  @@index([status])
+  @@index([speaker])
+  @@index([needsDetails])
+}
+
+model Transcript {
+  id         String              @id @default(uuid())
+  messageId  String              @unique
+  message    Message             @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  text       String
+  language   String              @default("en")
+  provider   String // "gemini" | "openai" | "elevenlabs" | "import" | "manual"
+  model      String?
+  reviewerId String?
+  reviewer   User?               @relation("TranscriptReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  approvedAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  versions   TranscriptVersion[]
+}
+
+// Every saved state of a transcript: the AI draft first, then each human save.
+model TranscriptVersion {
+  id           String     @id @default(uuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  text         String
+  kind         String // "ai" | "edit" | "approve"
+  authorId     String?
+  author       User?      @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+
+  @@index([transcriptId, createdAt])
+}
+
+// One transcription, run as small steps so each fits inside a server function:
+// PREPARE (download and cut the audio into parts), PART (transcribe one part), FINISH
+// (join the parts, draft the summary and themes).
+model TranscriptionJob {
+  id         String    @id @default(uuid())
+  messageId  String
+  message    Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  status     JobStatus @default(PENDING)
+  step       String    @default("PREPARE")
+  provider   String
+  // [{ path, durationSec, text? }] once the audio is cut.
+  parts      Json?
+  nextPart   Int       @default(0)
+  attempts   Int       @default(0)
+  error      String?
+  lockedAt   DateTime?
+  batchId    String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([messageId])
+}
+
+// A Glory Home manual. Phase 1 only carries what the old sheet knew, so the library can
+// show which messages have become manuals; Phase 2 adds the writing workflow.
+model Manual {
+  id        String   @id @default(uuid())
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  title     String?
+  code      String?
+  link      String?
+  writer    String?
+  status    String?
+  createdAt DateTime @default(now())
+
+  @@index([messageId])
+}
+
+// Who changed a message's details, and from what. Keeps corrections traceable.
+model MessageEdit {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  changes   Json
+  createdAt DateTime @default(now())
+
+  @@index([messageId, createdAt])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
