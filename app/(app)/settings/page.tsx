@@ -16,6 +16,10 @@ import { driveClientConfigured, redirectUri } from "@/lib/drive";
 import { prisma as db } from "@/lib/prisma";
 import { checkPodbeanNow, runNextBatch, queueTimingsBatch } from "@/app/actions/messages";
 import { HAS_AUDIO_SOURCE, NEEDS_TIMINGS } from "@/lib/jobs";
+import TemplateUpload from "@/components/glory/TemplateUpload";
+import TeamsForm from "@/components/glory/TeamsForm";
+import { gloryConfig } from "@/lib/glory-config";
+import { currentMonth } from "@/lib/glory-data";
 
 export const metadata = { title: "Settings" };
 // "Back up all now" can run for a few minutes.
@@ -31,7 +35,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const me = await currentUser();
   if (me.role !== "ADMIN") redirect("/library");
   const [s, users, invites, queue] = await Promise.all([
-    getSettings(["transcribeProvider", "batchSize", "batchOrder", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult", "driveRefreshToken", "driveAccount", "driveLastError", "driveRootFolderId"]),
+    getSettings(["transcribeProvider", "batchSize", "batchOrder", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult", "driveRefreshToken", "driveAccount", "driveLastError", "driveRootFolderId", "gloryRootFolderId", "gloryTemplateMembers", "gloryTemplateGuide"]),
     prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] }),
     prisma.invite.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
@@ -48,6 +52,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     speakerCounts(),
   ]);
   const speakerDuplicates = groupSpeakers(speakers).length;
+  const glory = await gloryConfig();
   const driveOn = driveClientConfigured() && !!s.driveRefreshToken;
   const DRIVE_RESULT: Record<string, string> = {
     connected: "Google Drive is connected.",
@@ -206,6 +211,39 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             <span className="text-sm text-muted">Use the Google account the Publishing team should own the Docs, ideally a church account.</span>
           </div>
         )}
+      </section>
+
+      <section id="glory-home" className="card flex scroll-mt-6 flex-col gap-5 p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display text-2xl font-semibold">Glory Home</h2>
+          <p className="text-sm text-muted">
+            Manuals are kept in a Glory Home folder the portal makes in {s.driveAccount || "the connected Google account"}
+            {s.gloryRootFolderId ? (
+              <>
+                {" "}(
+                <a className="link" href={`https://drive.google.com/drive/folders/${s.gloryRootFolderId}`} target="_blank" rel="noreferrer">open it</a>)
+              </>
+            ) : null}
+            . {driveOn ? "" : "Connect Google Drive above first."}
+          </p>
+        </div>
+        {driveOn && (
+          <div className="flex flex-col gap-3">
+            <h3 className="font-medium">Templates</h3>
+            <div className="grid gap-3 md:grid-cols-2">
+              <TemplateUpload kind="members" label="Members Manual template" url={s.gloryTemplateMembers ? `https://docs.google.com/document/d/${s.gloryTemplateMembers}/edit` : null} />
+              <TemplateUpload kind="guide" label="Teacher’s Guide template" url={s.gloryTemplateGuide ? `https://docs.google.com/document/d/${s.gloryTemplateGuide}/edit` : null} />
+            </div>
+            <p className="text-[13px] text-muted">
+              New manuals are copies of these, with “GLORY HOME MANUAL XXX”, the date and the topic filled in. Filling those in needs the Google Docs API turned on in the same Google Cloud project as Drive:{" "}
+              <a className="link" href="https://console.developers.google.com/apis/api/docs.googleapis.com/overview?project=985380904832" target="_blank" rel="noreferrer">turn it on here</a>.
+            </p>
+          </div>
+        )}
+        <div className="flex flex-col gap-3">
+          <h3 className="font-medium">Writing teams</h3>
+          <TeamsForm teams={glory.teams} rotation={glory.rotation} thisMonth={currentMonth()} />
+        </div>
       </section>
 
       <section className="card flex flex-col gap-5 p-6">

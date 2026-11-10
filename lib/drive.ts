@@ -92,7 +92,7 @@ export async function disconnect() {
 
 // ---- Talking to Drive ----
 
-async function accessToken(): Promise<string> {
+export async function accessToken(): Promise<string> {
   const sealed = await getSetting("driveRefreshToken");
   const refresh = sealed ? open(sealed) : null;
   if (!refresh) throw new DriveError("Google Drive isn't connected.", true);
@@ -114,7 +114,7 @@ async function accessToken(): Promise<string> {
   return json.access_token;
 }
 
-async function drive<T>(token: string, url: string, init: RequestInit = {}): Promise<T> {
+export async function drive<T>(token: string, url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
   if (!res.ok) {
     const body = await res.text();
@@ -125,9 +125,9 @@ async function drive<T>(token: string, url: string, init: RequestInit = {}): Pro
   return res.json() as Promise<T>;
 }
 
-const statusOf = (err: unknown) => (err as { status?: number })?.status;
+export const statusOf = (err: unknown) => (err as { status?: number })?.status;
 
-async function folderUsable(token: string, id: string): Promise<boolean> {
+export async function folderUsable(token: string, id: string): Promise<boolean> {
   if (!id) return false;
   try {
     const f = await drive<{ trashed?: boolean }>(token, `https://www.googleapis.com/drive/v3/files/${id}?fields=id,trashed`);
@@ -138,7 +138,7 @@ async function folderUsable(token: string, id: string): Promise<boolean> {
   }
 }
 
-async function createFolder(token: string, name: string, parent?: string): Promise<string> {
+export async function createFolder(token: string, name: string, parent?: string): Promise<string> {
   const f = await drive<{ id: string }>(token, "https://www.googleapis.com/drive/v3/files?fields=id", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

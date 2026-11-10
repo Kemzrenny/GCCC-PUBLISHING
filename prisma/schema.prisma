@@ -195,20 +195,58 @@ model TranscriptionJob {
   @@index([messageId])
 }
 
-// A Glory Home manual. Phase 1 only carries what the old sheet knew, so the library can
-// show which messages have become manuals; Phase 2 adds the writing workflow.
+// Where a Glory Home manual is: planned for a Saturday, being written, reviewed at the
+// Monday meeting, sent to the Glory Home secretariat, taught.
+enum ManualStage {
+  PLANNED
+  WRITING
+  REVIEWED
+  SENT
+  TAUGHT
+}
+
+// A Glory Home manual: one per Saturday, made from a message (one message can give several
+// manuals, "Part 1 of 4"). Each has a Members Manual and a Teacher's Guide in the portal's
+// Glory Home folder on Drive. A manual with no Saturday is a message lined up for a month.
 model Manual {
   id        String   @id @default(uuid())
   messageId String?
   message   Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  // The topic ("YOU NEED SPIRITUAL SIGHT").
   title     String?
+  // "MANUAL 155", as written on the documents; number is the same as a number.
   code      String?
+  number    Int?
+  stage     ManualStage @default(PLANNED)
+  saturday  DateTime? @db.Date
+  // "2026-12": lined up for that month's team, no Saturday yet.
+  plannedMonth String?
+  part      Int?
+  parts     Int?
+  membersWriter String?
+  guideWriter   String?
+  membersDocId  String?
+  membersUrl    String?
+  guideDocId    String?
+  guideUrl      String?
+  // Where it came from: portal, master-sheet, drive, publishing-sheet.
+  source    String   @default("portal")
+  // The sermon as the master sheet gave it, until it's matched to a message.
+  sourceTitle String?
+  sourceLink  String?
+  notes     String?
+  // Stops the same row or file being imported twice.
+  importKey String?  @unique
+  // From the old publishing sheet.
   link      String?
   writer    String?
   status    String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([messageId])
+  @@index([saturday])
+  @@index([number])
 }
 
 // Who changed a message's details, and from what. Keeps corrections traceable.

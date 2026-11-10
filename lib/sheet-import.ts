@@ -84,7 +84,9 @@ export async function importSheetCsv(csv: string): Promise<ImportResult> {
       const match = await prisma.manual.findFirst({
         where: { messageId, OR: [{ code: r.manual.code ?? undefined }, { title: r.manual.title ?? undefined }, { link: r.manual.link ?? undefined }] },
       });
-      const manualData = { messageId, title: r.manual.title, code: r.manual.code, link: r.manual.link, writer: r.manual.writer, status: r.manual.status };
+      const num = r.manual.code ? Number(/\d+/.exec(r.manual.code)?.[0]) || null : null;
+      // The old publishing sheet lists manuals already written.
+      const manualData = { messageId, title: r.manual.title, code: r.manual.code, number: num, link: r.manual.link, membersUrl: r.manual.link, writer: r.manual.writer, status: r.manual.status, stage: "TAUGHT" as const, source: "publishing-sheet" };
       if (match) await prisma.manual.update({ where: { id: match.id }, data: manualData });
       else {
         await prisma.manual.create({ data: manualData });

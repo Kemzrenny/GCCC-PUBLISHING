@@ -7,6 +7,7 @@ const NAMES: Record<string, string> = {
   messages: "Message",
   review: "Review queue",
   settings: "Settings",
+  "glory-home": "Glory Home",
   speakers: "Speakers",
 };
 

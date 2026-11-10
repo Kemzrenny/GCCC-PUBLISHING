@@ -4,6 +4,8 @@ import { ExternalLink, ArrowLeft } from "lucide-react";
 import { currentUser, canReview } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDuration, isoDay } from "@/lib/dates";
+import { STAGE_LABEL, monthLabel, saturdayFrom, type Stage } from "@/lib/glory";
+import { lagosToday } from "@/lib/glory-data";
 import { missingDetails, titleKnown } from "@/lib/needs";
 import { PROVIDER_LABELS, isProvider } from "@/lib/transcribe";
 import { StatusChip, Chip } from "@/components/ui";
@@ -30,7 +32,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
     include: {
       transcript: { include: { reviewer: { select: { name: true } }, _count: { select: { versions: true } } } },
       jobs: { orderBy: { createdAt: "desc" }, take: 6 },
-      manuals: true,
+      manuals: { orderBy: [{ saturday: { sort: "asc", nulls: "last" } }, { number: "asc" }] },
       assignee: { select: { name: true } },
       edits: { orderBy: { createdAt: "desc" }, take: 5, include: { user: { select: { name: true } } } },
     },
@@ -39,6 +41,15 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
   const speakers = reviewer
     ? (await prisma.message.groupBy({ by: ["speaker"], orderBy: { _count: { speaker: "desc" } }, take: 30 })).map((s) => s.speaker).filter((s): s is string => !!s)
     : [];
+  const manuals = m.manuals;
+  // The first Saturday from today with no manual, for "Plan a manual from this message".
+  const freeSaturday = await (async () => {
+    let d = saturdayFrom(lagosToday());
+    for (let i = 0; i < 26; i++, d = new Date(d.getTime() + 7 * 86_400_000)) {
+      if (!(await prisma.manual.findFirst({ where: { saturday: d }, select: { id: true } }))) return d.toISOString().slice(0, 10);
+    }
+    return null;
+  })();
   const isActive = (j: { status: string }) => j.status === "PENDING" || j.status === "RUNNING";
   // Transcription and timings are separate jobs: only transcription replaces the transcript box.
   const job = m.jobs.find((j) => j.kind !== "TIMINGS");
@@ -220,23 +231,29 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
           </section>
 
           <section className="card flex flex-col gap-3 p-6">
-            <h2 className="font-display text-lg font-semibold">Glory Home manuals</h2>
-            {m.manuals.length === 0 ? (
-              <p className="text-sm text-muted">No manuals from this message yet.</p>
+            <h2 className="font-display text-lg font-semibold">Glory Home</h2>
+            {manuals.length === 0 ? (
+              <p className="text-sm text-muted">Not used for a Glory Home manual yet.</p>
             ) : (
               <ul className="flex flex-col gap-3">
-                {m.manuals.map((man) => (
+                {manuals.map((man) => (
                   <li key={man.id} className="text-sm">
-                    <span className="font-medium">{man.title ?? man.code ?? "Manual"}</span>
-                    <span className="block text-muted">{[man.code, man.writer, man.status].filter(Boolean).join(" · ")}</span>
-                    {man.link && (
-                      <a className="link inline-flex items-center gap-1" href={man.link} target="_blank" rel="noreferrer">
-                        Open <ExternalLink aria-hidden size={13} />
-                      </a>
-                    )}
+                    <Link href={`/glory-home/manuals/${man.id}`} className="font-medium hover:underline">
+                      {[man.code, man.title].filter(Boolean).join(" · ") || (man.plannedMonth ? `Lined up for ${monthLabel(man.plannedMonth)}` : "Lined up")}
+                    </Link>
+                    <span className="block text-muted">
+                      {[man.saturday ? formatDate(man.saturday) : null, man.parts && man.parts > 1 ? `Part ${man.part} of ${man.parts}` : null, man.number || man.saturday ? STAGE_LABEL[man.stage as Stage] : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
                   </li>
                 ))}
               </ul>
+            )}
+            {user.role !== "VIEWER" && freeSaturday && (
+              <Link href={`/glory-home?m=${freeSaturday.slice(0, 7)}&plan=${freeSaturday}&message=${m.id}`} className="btn-quiet self-start">
+                Plan a manual from this message
+              </Link>
             )}
           </section>
 

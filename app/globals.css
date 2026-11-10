@@ -63,6 +63,8 @@
   --chip-red: #b3302a;
   --chip-green-bg: #e3f2e6;
   --chip-green: #1e6b33;
+  --chip-amber-bg: #fbf0dc;
+  --chip-amber: #8a5300;
   color-scheme: light;
 }
 
@@ -93,6 +95,8 @@
   --chip-red: #ff8a80;
   --chip-green-bg: #1d3324;
   --chip-green: #7fd39a;
+  --chip-amber-bg: #3a2c14;
+  --chip-amber: #f2b66d;
   color-scheme: dark;
 }
 

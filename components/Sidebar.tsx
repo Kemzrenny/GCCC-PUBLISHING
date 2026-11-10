@@ -10,7 +10,6 @@ import {
   CalendarDays,
   BookOpen,
   FileText,
-  Users,
   Settings,
   ChevronsUpDown,
   LogOut,
@@ -98,10 +97,9 @@ export default function Sidebar({ user, counts, theme }: Props) {
 
       <div className={`${fold} flex-col gap-0.5`}>
         <span className="px-1 pb-2 text-[11px] tracking-[0.06em] text-muted uppercase">Publishing</span>
-        <Soon icon={CalendarDays}>Glory Home calendar</Soon>
+        <NavLink href="/glory-home" icon={CalendarDays}>Glory Home</NavLink>
         <Soon icon={BookOpen}>Books &amp; booklets</Soon>
         <Soon icon={FileText}>Tracts</Soon>
-        <Soon icon={Users}>Teams &amp; rotation</Soon>
         {user.role === "ADMIN" && <NavLink href="/settings" icon={Settings}>Settings</NavLink>}
       </div>
 

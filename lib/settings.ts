@@ -27,6 +27,19 @@ export const SETTING_DEFAULTS = {
   // {"2026": "<folder id>", ...}
   driveYearFolders: "{}",
   driveLastError: "",
+  // Glory Home. Teams and the month rotation are JSON (see lib/glory.ts); empty means the
+  // defaults there.
+  gloryTeams: "",
+  gloryRotation: "",
+  // The portal's own "Glory Home" folder on Drive, and the folders made inside it:
+  // {"2026 Manuals/11_November_2026": "<id>", ...}
+  gloryRootFolderId: "",
+  gloryFolders: "{}",
+  gloryTemplateMembers: "",
+  gloryTemplateGuide: "",
+  // Emails the Glory Home folder has been shared with.
+  gloryShared: "[]",
+  gloryLastImport: "",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
