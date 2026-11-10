@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { enqueue, enqueueBatch, enqueueTimings, kickRunner, cancelJob } from "@/lib/jobs";
 import { geminiConfigured } from "@/lib/gemini";
-import { checkPodbean } from "@/lib/podbean";
+import { checkPodbean, finishLookups } from "@/lib/podbean";
 import { getSettings, markSheetDirty } from "@/lib/settings";
 import { looksLikeFuture } from "@/lib/dates";
 import { backupSoon } from "@/lib/drive";
@@ -106,11 +106,13 @@ export async function checkPodbeanNow(): Promise<ActionResult> {
     await requireUser([...REVIEWERS]);
     const r = await checkPodbean();
     if (r.queued) after(kickRunner);
+    // Older episodes still to look up: carry on in the background.
+    if (r.report?.toLookUp) after(() => finishLookups().catch(() => {}));
     revalidatePath("/", "layout");
     const parts = [`${r.added} new message${r.added === 1 ? "" : "s"}`, `${r.resolved} waiting message${r.resolved === 1 ? "" : "s"} filled in`];
     if (r.queued) parts.push(`${r.queued} queued for transcription`);
     const left = r.report?.waiting ?? 0;
-    const more = r.report?.toLookUp ? ` ${r.report.toLookUp} episode pages still to read: check again to carry on.` : "";
+    const more = r.report?.toLookUp ? ` Reading the other ${r.report.toLookUp} older episodes in the background: refresh in a few minutes.` : "";
     return { ok: `Checked Podbean: ${parts.join(", ")}. ${left} still waiting.${more}` };
   } catch (err) {
     return fail(err);

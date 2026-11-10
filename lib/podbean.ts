@@ -48,7 +48,7 @@ export type PodbeanResult = {
 };
 
 const PAGE_BUDGET_MS = 40_000;
-const PAGE_CONCURRENCY = 6;
+const PAGE_CONCURRENCY = 10;
 
 export async function checkPodbean(): Promise<PodbeanResult> {
   const res = await fetch(feedUrl(), { headers: { "User-Agent": "GCCC Publishing Portal" }, cache: "no-store" });
@@ -138,7 +138,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
   return result;
 }
 
-async function readEpisodePages(descriptions: Map<string, string>) {
+async function readEpisodePages(descriptions: Map<string, string>, budgetMs = PAGE_BUDGET_MS) {
   const started = Date.now();
   const out = { read: 0, failed: 0 };
   const todo = await prisma.message.findMany({
@@ -152,7 +152,7 @@ async function readEpisodePages(descriptions: Map<string, string>) {
 
   const worker = async () => {
     for (let m = queue.shift(); m; m = queue.shift()) {
-      if (Date.now() - started > PAGE_BUDGET_MS) return;
+      if (Date.now() - started > budgetMs) return;
       try {
         const res = await fetch(m.sourceUrl!, {
           redirect: "follow",
@@ -184,6 +184,35 @@ async function readEpisodePages(descriptions: Map<string, string>) {
   };
   await Promise.all(Array.from({ length: PAGE_CONCURRENCY }, worker));
   return out;
+}
+
+// Keeps reading old episodes' pages until none are left, a page round finds nothing new, or
+// the time runs out. Runs after "Check Podbean" has answered, so nobody has to keep clicking.
+export async function finishLookups(budgetMs = 230_000): Promise<void> {
+  const started = Date.now();
+  const speakerOf = await speakerResolver();
+  for (;;) {
+    const left = budgetMs - (Date.now() - started);
+    if (left < 15_000) break;
+    const descriptions = new Map<string, string>();
+    const pages = await readEpisodePages(descriptions, Math.min(PAGE_BUDGET_MS, left - 10_000));
+    const result: PodbeanResult = { checked: 0, added: 0, linked: 0, needsDetails: 0, queued: 0, resolved: 0 };
+    const report = await resolveWaiting(descriptions, speakerOf, [], result);
+    report.pagesRead = pages.read;
+    report.pagesFailed = pages.failed;
+    // Keep the last check's feed figures; update what's still waiting.
+    let last: PodbeanResult | null = null;
+    try {
+      last = JSON.parse((await getSetting("podbeanLastResult")) || "null");
+    } catch {}
+    if (last) {
+      last.resolved = (last.resolved ?? 0) + result.resolved;
+      last.report = report;
+      await setSetting("podbeanLastResult", JSON.stringify(last));
+    }
+    if (result.resolved) await markSheetDirty();
+    if (!report.toLookUp || pages.read === 0) break;
+  }
 }
 
 async function resolveWaiting(

@@ -1,5 +1,5 @@
 import { NextResponse, after } from "next/server";
-import { checkPodbean } from "@/lib/podbean";
+import { checkPodbean, finishLookups } from "@/lib/podbean";
 import { runJobs, kickRunner } from "@/lib/jobs";
 import { syncSheet, sheetConfigured } from "@/lib/sheets";
 import { getSetting, setSetting } from "@/lib/settings";
@@ -17,7 +17,9 @@ export async function GET(req: Request) {
   }
   const report: Record<string, unknown> = {};
   try {
-    report.podbean = await checkPodbean();
+    const podbean = await checkPodbean();
+    report.podbean = podbean;
+    if (podbean.report?.toLookUp) after(() => finishLookups(60_000).catch(() => {}));
   } catch (err) {
     report.podbean = { error: err instanceof Error ? err.message : String(err) };
   }

@@ -131,7 +131,7 @@ function WhyWaiting({ report, feedEpisodes }: { report: NonNullable<PodbeanResul
     {
       n: report.toLookUp,
       label: "Not looked up yet",
-      detail: `Podbean’s feed only lists its latest ${feedEpisodes} episodes, so older ones are read from their own Podbean pages, a batch at a time. It carries on every two hours, or use the button below. Any that stay here after a few tries have a Podbean link that no longer opens.`,
+      detail: `Podbean’s feed only lists its latest ${feedEpisodes} episodes, so older ones are read from their own Podbean pages, a batch at a time. Clicking the button below reads them all in the background; refresh in a few minutes. Any that stay here after a few tries have a Podbean link that no longer opens.`,
     },
     { n: report.noTitle, label: "No usable title", detail: "The Podbean title doesn’t say what the message is.", samples: report.samples.noTitle },
     { n: report.noDate, label: "No date anywhere", detail: "No date in the title or description, and no upload date.", samples: report.samples.noDate },
@@ -139,7 +139,7 @@ function WhyWaiting({ report, feedEpisodes }: { report: NonNullable<PodbeanResul
   ].filter((r) => r.n > 0);
   if (!rows.length) return null;
   return (
-    <details className="rounded-xl bg-banner px-4 py-3 text-sm">
+    <details open={report.toLookUp > 0} className="rounded-xl bg-banner px-4 py-3 text-sm">
       <summary className="cursor-pointer font-medium">Why Podbean couldn’t fill these in</summary>
       <p className="mt-2 text-muted">
         From the last check{report.pagesRead || report.pagesFailed ? ` (read ${report.pagesRead} episode pages${report.pagesFailed ? `, ${report.pagesFailed} couldn’t be opened` : ""})` : ""}.
