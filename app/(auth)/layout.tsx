@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { optionalUser } from "@/lib/auth";
 
@@ -13,6 +14,11 @@ export default async function AuthLayout({ children }: LayoutProps<"/">) {
           <span className="text-[11px] font-semibold tracking-[0.18em] text-red uppercase">Publishing</span>
         </div>
         <div className="card p-6 sm:p-8">{children}</div>
+        <p className="mt-6 flex justify-center gap-5 text-xs text-muted">
+          <Link className="hover:underline" href="/about">About</Link>
+          <Link className="hover:underline" href="/privacy">Privacy policy</Link>
+          <Link className="hover:underline" href="/terms">Terms of service</Link>
+        </p>
       </div>
     </main>
   );
