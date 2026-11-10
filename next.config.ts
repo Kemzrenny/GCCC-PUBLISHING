@@ -25,7 +25,11 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
-    return [{ source: "/", destination: "/library", permanent: false }];
+    return [
+      { source: "/", destination: "/library", permanent: false },
+      // Speakers moved into Settings.
+      { source: "/speakers", destination: "/settings/speakers", permanent: true },
+    ];
   },
 };
 

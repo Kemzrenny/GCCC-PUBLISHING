@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { speakerCounts } from "@/lib/speakers";
+import { groupSpeakers } from "@/lib/speaker-groups";
 import { currentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
@@ -38,11 +41,13 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     db.message.count({ where: { ...untranscribed, ...HAS_AUDIO_SOURCE } }),
     db.message.count({ where: { ...untranscribed, NOT: HAS_AUDIO_SOURCE } }),
   ]);
-  const [backedUp, transcripts, untimed] = await Promise.all([
+  const [backedUp, transcripts, untimed, speakers] = await Promise.all([
     db.transcript.count({ where: { driveUrl: { not: null } } }),
     db.transcript.count(),
     db.message.count({ where: NEEDS_TIMINGS }),
+    speakerCounts(),
   ]);
+  const speakerDuplicates = groupSpeakers(speakers).length;
   const driveOn = driveClientConfigured() && !!s.driveRefreshToken;
   const DRIVE_RESULT: Record<string, string> = {
     connected: "Google Drive is connected.",
@@ -111,6 +116,21 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           values={s}
           providers={PROVIDERS.map((p) => ({ key: p, label: PROVIDER_LABELS[p], ready: providerConfigured(p) }))}
         />
+      </section>
+
+      <section className="card flex flex-wrap items-center justify-between gap-4 p-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display text-xl font-semibold">Speakers</h2>
+          <p className="text-sm text-muted">
+            {speakers.length} speaker name{speakers.length === 1 ? "" : "s"} in the library
+            {speakerDuplicates > 0
+              ? ` · ${speakerDuplicates} look${speakerDuplicates === 1 ? "s" : ""} like the same person spelled differently.`
+              : " · no duplicates spotted."}
+          </p>
+        </div>
+        <Link href="/settings/speakers" className={speakerDuplicates ? "btn-primary" : "btn-quiet"}>
+          {speakerDuplicates ? "Review and merge" : "Manage speakers"}
+        </Link>
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">

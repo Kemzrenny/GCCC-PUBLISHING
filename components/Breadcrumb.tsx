@@ -12,10 +12,17 @@ const NAMES: Record<string, string> = {
 };
 
 export default function Breadcrumb() {
-  const section = usePathname().split("/")[1] ?? "library";
+  const [, section = "library", sub] = usePathname().split("/");
+  const page = section === "settings" && sub && NAMES[sub] ? NAMES[sub] : null;
   return (
     <nav aria-label="Breadcrumb" className="text-lg text-muted sm:text-xl">
-      Publishing <span aria-hidden>/</span> <span className="text-ink">{NAMES[section] ?? "Library"}</span>
+      Publishing <span aria-hidden>/</span> {page ? (
+        <>
+          {NAMES.settings} <span aria-hidden>/</span> <span className="text-ink">{page}</span>
+        </>
+      ) : (
+        <span className="text-ink">{NAMES[section] ?? "Library"}</span>
+      )}
     </nav>
   );
 }

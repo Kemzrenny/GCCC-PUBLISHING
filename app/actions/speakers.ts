@@ -9,7 +9,7 @@ const plural = (n: number) => `${n} message${n === 1 ? "" : "s"}`;
 
 export async function merge(target: string, variants: string[]): Promise<ActionResult> {
   try {
-    await requireUser(["ADMIN", "REVIEWER"]);
+    await requireUser(["ADMIN"]);
     if (!target.trim()) return { error: "Choose the name to keep." };
     const moved = await mergeSpeakers(target, variants);
     revalidatePath("/", "layout");
@@ -21,7 +21,7 @@ export async function merge(target: string, variants: string[]): Promise<ActionR
 
 export async function notASpeaker(name: string): Promise<ActionResult> {
   try {
-    await requireUser(["ADMIN", "REVIEWER"]);
+    await requireUser(["ADMIN"]);
     const moved = await mergeSpeakers(null, [name]);
     revalidatePath("/", "layout");
     return { ok: `Removed from ${plural(moved)}. Future imports will leave it blank too.` };

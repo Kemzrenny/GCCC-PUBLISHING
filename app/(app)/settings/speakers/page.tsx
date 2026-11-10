@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import { currentUser, canReview } from "@/lib/auth";
+import { ArrowLeft } from "lucide-react";
+import { currentUser } from "@/lib/auth";
 import { speakerCounts } from "@/lib/speakers";
 import { groupSpeakers } from "@/lib/speaker-groups";
 import { PageHeading, Empty } from "@/components/ui";
@@ -9,12 +11,15 @@ export const metadata = { title: "Speakers" };
 
 export default async function SpeakersPage() {
   const user = await currentUser();
-  if (!canReview(user.role)) redirect("/library");
+  if (user.role !== "ADMIN") redirect("/library");
   const speakers = await speakerCounts();
   const groups = groupSpeakers(speakers);
 
   return (
     <>
+      <Link href="/settings" className="inline-flex items-center gap-1.5 self-start text-sm text-muted hover:text-ink">
+        <ArrowLeft aria-hidden size={16} /> Settings
+      </Link>
       <PageHeading
         eyebrow="Speakers"
         title="One name per minister."
