@@ -5,7 +5,6 @@ import { currentUser, canReview } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { after } from "next/server";
 import { nudgeStalledQueue } from "@/lib/jobs";
-import { TO_CHECK } from "@/lib/check-dates";
 import Sidebar from "@/components/Sidebar";
 import ActionButton from "@/components/ActionButton";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -21,8 +20,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   after(() => nudgeStalledQueue().catch(() => {}));
   const [review, needs, approved, total] = await Promise.all([
     prisma.message.count({ where: { status: { in: ["AI_DRAFT", "IN_REVIEW"] } } }),
-    // Check dates: missing details plus upload-day dates nobody has confirmed.
-    prisma.message.count({ where: { OR: [{ needsDetails: true }, TO_CHECK] } }),
+    // Only messages that genuinely need a person (no usable title or date). Upload-day
+    // dates are in use; checking them is optional, so they don't count here.
+    prisma.message.count({ where: { needsDetails: true } }),
     prisma.message.count({ where: { status: "APPROVED" } }),
     prisma.message.count(),
   ]);

@@ -3,7 +3,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { TAB_STATUSES, TABS, type TabKey } from "@/lib/status";
 import { getSetting } from "@/lib/settings";
-import { TO_CHECK } from "@/lib/check-dates";
 
 export const PAGE_SIZE = 25;
 
@@ -83,7 +82,7 @@ export async function libraryStats() {
     prisma.message.count(),
     prisma.message.count({ where: { status: "APPROVED" } }),
     prisma.message.count({ where: { status: { in: ["QUEUED", "TRANSCRIBING", "AI_DRAFT", "IN_REVIEW"] } } }),
-    prisma.message.count({ where: { OR: [{ needsDetails: true }, TO_CHECK] } }),
+    prisma.message.count({ where: { needsDetails: true } }),
     prisma.message.count({ where: { manuals: { some: {} } } }),
     getSetting("manualsWritten"),
     prisma.message.groupBy({ by: ["speaker"], _count: { _all: true }, orderBy: { _count: { speaker: "desc" } }, take: 200 }),

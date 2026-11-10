@@ -44,15 +44,15 @@ export default async function CheckDatesPage({ searchParams }: PageProps<"/check
       <PageHeading
         eyebrow="Check dates"
         title="Is this when it was preached?"
-        lead="These messages are dated by the day they went up on Podbean. If you know the real date, change it; if the upload day is right, say so. Either way it comes off this list."
+        lead="Messages with no date in their title use the day they went up on Podbean, and that date is already in use. If you know a message was preached on a different day, correct it here whenever you have time. Nothing is waiting on this."
       />
 
       {toCheck + checked > 0 && (
         <section aria-label="Progress" className="flex flex-wrap items-center gap-5 rounded-2xl bg-banner px-6 py-5">
           <div className="flex min-w-72 flex-1 flex-col gap-2.5">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-display text-2xl font-semibold">{toCheck.toLocaleString()} to check</span>
-              <span className="text-[15px] text-muted">· {checked.toLocaleString()} checked so far</span>
+              <span className="font-display text-2xl font-semibold">{toCheck.toLocaleString()} using the upload date</span>
+              <span className="text-[15px] text-muted">· {checked.toLocaleString()} confirmed or corrected</span>
             </div>
             <div role="img" aria-label={`${pct}% checked`} className="h-1.5 rounded-full bg-track">
               <div className="h-1.5 rounded-full bg-brand" style={{ width: `${pct}%` }} />
