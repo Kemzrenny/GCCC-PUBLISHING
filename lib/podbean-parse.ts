@@ -97,8 +97,9 @@ export function normaliseSpeaker(raw: string | null | undefined): string | null 
   const cleaned = words.slice(t ? 1 : 0).map((w) => {
     // "P.K." and "PK" are the same initials.
     if (/^[A-Z]{2}$/.test(w) || /^([A-Z]\.){2,3}$/.test(w)) return w.replace(/\./g, "").split("").join(".") + ".";
-    // "OLAWALE" -> "Olawale".
+    // "OLAWALE" -> "Olawale", "kunle" -> "Kunle".
     if (/^[A-Z]{3,}$/.test(w)) return w[0] + w.slice(1).toLowerCase();
+    if (/^[a-z]/.test(w)) return w[0].toUpperCase() + w.slice(1);
     return w;
   });
   const name = cleaned.join(" ").trim();

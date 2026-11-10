@@ -128,3 +128,26 @@ test("audio from a Podbean episode page", async () => {
   assert.equal(isPodbeanEpisode("https://docs.google.com/x"), false);
   assert.ok(urlVariants("https://gcccpodcasts.podbean.com/e/abc").includes("https://gcccpodcasts.podbean.com/e/abc/"));
 });
+
+test("speaker groups from the real dropdown", async () => {
+  const { groupSpeakers } = await import("../lib/speaker-groups");
+  const names = ["Pastor Kunle Zakariya", "Pastor Olakunle Zakariya", "Glory Centre Community Church", "Pastor Obi Esiobu", "Pastor Olaoluwa Faniyi", "Pastor Olaolu Faniyi", "Prophet Ayo Jeje", "Pastor Adesola Zakariya", "Apostle Brandon Bailey", "Pastor Obi", "Pastor Akorede Zakariya", "Pastor Seyi Adefemi", "Pastor Korede Zakariya", "Pastor Anu Faniyi", "Pastor Joshua Obeng", "Pastor Kunle Olawale", "Rev. Kayode Oyegoke", "Pastor Laolu Faniyi", "Pastor Deji Akinsanya", "Pastor Ayo Jeje", "Apostle Gideon Odoma", "Pastor Kunle Zakariy", "Pastor Tunji Adeyinka", "Prophetess Fanny", "Pastor Zerubbabel Mengistu", "Pastor Deji", "Pastor Idara Esiobu", "Apostle Anselm Madubuko", "Pastor Desola Zakariya", "Pastor kunle Zakariya"];
+  const counts = names.map((name, i) => ({ name, count: name === "Pastor Olakunle Zakariya" ? 900 : 30 - i }));
+  const groups = groupSpeakers(counts);
+  const find = (n: string) => groups.find((g) => g.names.some((x) => x.name === n));
+  const set = (n: string) => new Set(find(n)?.names.map((x) => x.name));
+  assert.deepEqual(set("Pastor Kunle Zakariya"), new Set(["Pastor Olakunle Zakariya", "Pastor Kunle Zakariya", "Pastor Kunle Zakariy", "Pastor kunle Zakariya"]));
+  assert.equal(find("Pastor Kunle Zakariya")?.suggested, "Pastor Olakunle Zakariya");
+  assert.deepEqual(set("Pastor Laolu Faniyi"), new Set(["Pastor Olaoluwa Faniyi", "Pastor Olaolu Faniyi", "Pastor Laolu Faniyi"]));
+  assert.deepEqual(set("Pastor Desola Zakariya"), new Set(["Pastor Adesola Zakariya", "Pastor Desola Zakariya"]));
+  assert.deepEqual(set("Pastor Korede Zakariya"), new Set(["Pastor Akorede Zakariya", "Pastor Korede Zakariya"]));
+  assert.deepEqual(set("Pastor Ayo Jeje"), new Set(["Prophet Ayo Jeje", "Pastor Ayo Jeje"]));
+  assert.deepEqual(set("Pastor Obi"), new Set(["Pastor Obi Esiobu", "Pastor Obi"]));
+  assert.deepEqual(set("Pastor Deji"), new Set(["Pastor Deji Akinsanya", "Pastor Deji"]));
+  // Different people stay apart.
+  assert.equal(find("Pastor Anu Faniyi"), undefined);
+  assert.equal(find("Pastor Idara Esiobu"), undefined);
+  assert.equal(find("Pastor Kunle Olawale"), undefined);
+  assert.ok(!set("Pastor Adesola Zakariya").has("Pastor Akorede Zakariya"));
+  console.log(groups.map((g) => `${g.suggested} <= ${g.names.map((n) => n.name).join(" | ")}`).join("\n"));
+});

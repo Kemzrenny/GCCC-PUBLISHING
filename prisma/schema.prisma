@@ -216,3 +216,12 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+// Other spellings of a speaker's name ("Pastor Kunle Zakariya") and the one name they're
+// filed under ("Pastor Olakunle Zakariya"). Imports from Podbean and the sheet use it, so a
+// merge on the Speakers page sticks. An empty name means "not a speaker" (e.g. the church).
+model SpeakerAlias {
+  alias     String   @id // lower case
+  name      String
+  createdAt DateTime @default(now())
+}

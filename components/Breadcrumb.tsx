@@ -8,6 +8,7 @@ const NAMES: Record<string, string> = {
   review: "Review queue",
   "needs-details": "Needs details",
   settings: "Settings",
+  speakers: "Speakers",
 };
 
 export default function Breadcrumb() {

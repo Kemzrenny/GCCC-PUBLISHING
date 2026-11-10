@@ -85,7 +85,7 @@ export async function libraryStats() {
     prisma.message.count({ where: { needsDetails: true } }),
     prisma.message.count({ where: { manuals: { some: {} } } }),
     getSetting("manualsWritten"),
-    prisma.message.groupBy({ by: ["speaker"], _count: { _all: true }, orderBy: { _count: { speaker: "desc" } }, take: 30 }),
+    prisma.message.groupBy({ by: ["speaker"], _count: { _all: true }, orderBy: { _count: { speaker: "desc" } }, take: 200 }),
     prisma.$queryRaw<{ year: number }[]>`SELECT DISTINCT EXTRACT(YEAR FROM "date")::int AS year FROM "Message" WHERE "date" IS NOT NULL ORDER BY year DESC`,
   ]);
   return {

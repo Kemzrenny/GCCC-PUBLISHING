@@ -8,9 +8,9 @@ import { requireUser } from "@/lib/auth";
 import { enqueue, enqueueBatch, kickRunner, cancelJob } from "@/lib/jobs";
 import { checkPodbean } from "@/lib/podbean";
 import { getSettings, markSheetDirty } from "@/lib/settings";
-import { normaliseSpeaker } from "@/lib/podbean-parse";
 import { looksLikeFuture } from "@/lib/dates";
 import { backupSoon } from "@/lib/drive";
+import { resolveSpeaker } from "@/lib/speakers";
 
 export type ActionResult = { ok?: string; error?: string } | null;
 
@@ -108,7 +108,7 @@ export async function saveDetails(messageId: string, _: ActionResult, form: Form
     const next = {
       title: d.title,
       date: new Date(`${d.date}T00:00:00Z`),
-      speaker: normaliseSpeaker(d.speaker),
+      speaker: await resolveSpeaker(d.speaker),
       series: d.series || null,
       location: d.location || null,
     };

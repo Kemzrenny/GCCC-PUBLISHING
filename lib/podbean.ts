@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseFeed, parseEpisodeTitle, urlVariants } from "@/lib/podbean-parse";
 import { enqueue } from "@/lib/jobs";
 import { getSetting, setSetting, markSheetDirty } from "@/lib/settings";
+import { speakerResolver } from "@/lib/speakers";
 
 // Checks the GCCC Podbean feed for episodes the portal hasn't seen, adds them to the
 // library, flags any whose title is missing a title or date, and (by default) queues them
@@ -18,6 +19,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
   if (!res.ok) throw new Error(`The Podbean feed answered ${res.status}.`);
   const episodes = parseFeed(await res.text());
 
+  const speakerOf = await speakerResolver();
   const result: PodbeanResult = { checked: episodes.length, added: 0, linked: 0, needsDetails: 0, queued: 0 };
   const newIds: string[] = [];
 
@@ -28,6 +30,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
       },
     });
     const parsed = parseEpisodeTitle(ep.title);
+    parsed.speaker = speakerOf(parsed.speaker);
 
     if (existing) {
       // Matched to a row from the old sheet (by its Podbean link) or seen before.

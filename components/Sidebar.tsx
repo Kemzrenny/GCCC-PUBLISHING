@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import {
   LayoutGrid,
   ListChecks,
+  Mic,
   CircleAlert,
   CalendarDays,
   BookOpen,
@@ -96,6 +97,7 @@ export default function Sidebar({ user, counts, theme }: Props) {
         <NavLink href="/library" icon={LayoutGrid}>Message library</NavLink>
         <NavLink href="/review" icon={ListChecks} count={counts.review}>Review queue</NavLink>
         <NavLink href="/needs-details" icon={CircleAlert} count={counts.needs}>Needs details</NavLink>
+        {reviewer && <NavLink href="/speakers" icon={Mic}>Speakers</NavLink>}
       </div>
 
       <div className={`${fold} flex-col gap-0.5`}>

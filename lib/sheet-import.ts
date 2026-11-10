@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { parseCsv } from "@/lib/csv";
 import { mapSheet, type SheetRow } from "@/lib/sheet-map";
 import { markSheetDirty } from "@/lib/settings";
+import { speakerResolver } from "@/lib/speakers";
 
 // One-time (and repeatable) import of the old Publishing sheet. Rows are matched to
 // messages already in the portal by the sheet's ID, then by Podbean link, so importing
@@ -38,6 +39,8 @@ function messageData(r: SheetRow): Prisma.MessageUncheckedCreateInput {
 export async function importSheetCsv(csv: string): Promise<ImportResult> {
   const { rows, error } = mapSheet(parseCsv(csv));
   if (error) throw new Error(error);
+  const speakerOf = await speakerResolver();
+  for (const r of rows) r.speaker = speakerOf(r.speaker);
   const result: ImportResult = { rows: rows.length, created: 0, updated: 0, manuals: 0, problems: [] };
   const seenUrls = new Set<string>();
 
