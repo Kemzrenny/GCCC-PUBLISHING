@@ -5,14 +5,18 @@ import { isoDay, formatDate } from "@/lib/dates";
 import { missingDetails, titleKnown } from "@/lib/needs";
 import { PageHeading, Empty } from "@/components/ui";
 import DetailsForm from "@/components/DetailsForm";
+import ActionButton from "@/components/ActionButton";
+import { checkPodbeanNow } from "@/app/actions/messages";
 
 export const metadata = { title: "Needs details" };
 
 export default async function NeedsDetailsPage() {
   const user = await currentUser();
   const reviewer = canReview(user.role);
-  const [messages, speakers] = await Promise.all([
+  const [messages, total, fromSheetNoLink, speakers] = await Promise.all([
     prisma.message.findMany({ where: { needsDetails: true }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 100 }),
+    prisma.message.count({ where: { needsDetails: true } }),
+    prisma.message.count({ where: { needsDetails: true, podbeanTitle: null, OR: [{ sourceUrl: null }, { NOT: { sourceUrl: { contains: "podbean.com" } } }] } }),
     prisma.message.groupBy({ by: ["speaker"], orderBy: { _count: { speaker: "desc" } }, take: 30 }),
   ]);
   const speakerNames = speakers.map((s) => s.speaker).filter((s): s is string => !!s);
@@ -22,8 +26,24 @@ export default async function NeedsDetailsPage() {
       <PageHeading
         eyebrow="Needs details"
         title="Name it before we file it."
-        lead="These Podbean episodes were uploaded without a usable title or date. Listen to the start, confirm the details, and they join the library properly."
+        lead="Messages whose title or date couldn’t be worked out. The portal tries the Podbean title, then the episode description, then the day it was uploaded; whatever’s left needs a person."
       />
+      {total > 0 && reviewer && (
+        <section className="flex flex-col gap-3 rounded-xl bg-banner p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            <span className="font-medium">{total.toLocaleString()} waiting.</span>{" "}
+            <span className="text-muted">
+              Checking Podbean fills in any it can. This also happens automatically every two hours.
+              {fromSheetNoLink > 0 &&
+                ` ${fromSheetNoLink.toLocaleString()} came from the old sheet without a Podbean link, so Podbean can’t help with those.`}
+              {total > messages.length && ` Showing the newest ${messages.length}.`}
+            </span>
+          </p>
+          <div className="shrink-0">
+            <ActionButton action={checkPodbeanNow} pendingLabel="Checking…">Fill from Podbean</ActionButton>
+          </div>
+        </section>
+      )}
       {messages.length === 0 ? (
         <section className="card">
           <Empty title="All caught up">Every message in the library has a title and date.</Empty>
@@ -35,7 +55,9 @@ export default async function NeedsDetailsPage() {
               <div className="flex flex-col gap-1">
                 <Link href={`/messages/${m.id}`} className="font-display text-xl font-semibold hover:underline">{m.title}</Link>
                 <span className="text-sm text-muted">
-                  {m.podbeanTitle ? `From Podbean, around ${formatDate(m.date) || "an unknown date"}` : `From the old sheet, dated ${formatDate(m.date) || "nothing"}`}
+                  {m.podbeanTitle
+                    ? `From Podbean, uploaded around ${formatDate(m.date) || "an unknown date"} (a catch-up upload, so that's not when it was preached)`
+                    : `From the old sheet, dated ${formatDate(m.date) || "nothing"}`}
                   {missingDetails(m).length > 0 && <span className="text-alert"> · needs {missingDetails(m).join(" and ")}</span>}
                 </span>
               </div>

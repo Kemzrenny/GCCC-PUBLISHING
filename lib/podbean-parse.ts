@@ -1,4 +1,4 @@
-import { parseDayMonthYear } from "./dates";
+import { parseDayMonthYear, findDateInText, lagosDay, looksLikeFuture } from "./dates";
 
 // Reading the GCCC Podbean feed. Episode titles are typed by hand when uploading, so they
 // vary: "02-09-2026 Knowing God and Living Out the Kingdom Pastor Olakunle Zakariya",
@@ -129,6 +129,18 @@ export function parseEpisodeTitle(raw: string): ParsedTitle {
     rest = rest.slice(lead[0].length);
   }
 
+  // Not at the start: look for a date anywhere ("Faith That Works 23rd July 2023").
+  if (!date) {
+    const found = findDateInText(rest);
+    if (found) {
+      date = found.date;
+      // Take the weekday before it too ("Sunday 12th March 2023").
+      const escaped = found.match.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const withDay = new RegExp(`(?:\\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day|nesday|sday|urday)?\\.?,?\\s+)?${escaped}`, "i");
+      rest = rest.replace(withDay, " ").replace(/\s+/g, " ").trim();
+    }
+  }
+
   let speaker: string | null = null;
   const sp = SPEAKER_RE.exec(rest);
   if (sp) {
@@ -160,6 +172,13 @@ export function isPodbeanEpisode(url: string | null | undefined): boolean {
 
 // The same page written slightly differently (http/https, trailing slash, letter case,
 // a query string) should count as the same episode.
+// The episode's own part of a Podbean link ("/e/faith-that-works/" → "faith-that-works"),
+// the same whichever Podbean address the link was copied from.
+export function episodeSlug(url: string): string | null {
+  const m = /podbean\.com\/e\/([^/?#\s]+)/i.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export function urlVariants(url: string): string[] {
   try {
     const u = new URL(url.trim());
@@ -192,4 +211,36 @@ export function audioFromEpisodePage(html: string): string | null {
   }
   const any = /https?:\\?\/\\?\/[a-z0-9.-]*podbean\.com\\?\/[^"'\s<>]+?\.(?:mp3|m4a)/i.exec(html);
   return any ? clean(any[0]) : null;
+}
+
+// ---- Dates from Podbean ----
+
+// Episodes uploaded on the same day as many others were a catch-up upload, so their
+// upload date says nothing about when they were preached.
+export const BUSY_UPLOAD_DAY = 4;
+
+export function uploadDayCounts(episodes: { pubDate: Date | null }[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const ep of episodes) {
+    if (!ep.pubDate) continue;
+    const k = lagosDay(ep.pubDate).getTime();
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export type EpisodeDate = { date: Date; fromUpload: boolean } | null;
+
+// The best date for an episode: one written in its title, then in its description, then
+// the day it was uploaded to Podbean (unless that was a catch-up day).
+export function episodeDate(ep: { title: string; description: string; pubDate: Date | null }, counts: Map<number, number>, now = new Date()): EpisodeDate {
+  const fromTitle = parseEpisodeTitle(ep.title).date;
+  if (fromTitle && !looksLikeFuture(fromTitle, now)) return { date: fromTitle, fromUpload: false };
+  const fromDescription = findDateInText(ep.description)?.date;
+  if (fromDescription && !looksLikeFuture(fromDescription, now)) return { date: fromDescription, fromUpload: false };
+  if (ep.pubDate) {
+    const day = lagosDay(ep.pubDate);
+    if ((counts.get(day.getTime()) ?? 0) < BUSY_UPLOAD_DAY && !looksLikeFuture(day, now)) return { date: day, fromUpload: true };
+  }
+  return null;
 }

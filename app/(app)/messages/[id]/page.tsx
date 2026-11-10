@@ -45,7 +45,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
   const timingsJob = m.jobs.find((j) => j.kind === "TIMINGS");
   const timeline = readTimeline(m.transcript?.timeline);
   const parts = (activeJob?.parts as { text?: string }[] | null) ?? [];
-  const meta = [formatDate(m.date), m.speaker, m.series, m.location].filter(Boolean);
+  const meta = [m.date && m.dateFromUpload ? `${formatDate(m.date)} (Podbean upload date)` : formatDate(m.date), m.speaker, m.series, m.location].filter(Boolean);
 
   return (
     <>

@@ -201,3 +201,42 @@ test("Gemini timings are read safely", async () => {
   ]);
   assert.deepEqual(cleanTimeline({ nope: 1 }), []);
 });
+
+test("dates are found anywhere in a title, or taken from the upload day", async () => {
+  const { findDateInText } = await import("../lib/dates");
+  const { parseEpisodeTitle, episodeDate, uploadDayCounts } = await import("../lib/podbean-parse");
+  const d = (x: Date | null | undefined) => (x ? x.toISOString().slice(0, 10) : null);
+  assert.equal(d(findDateInText("Faith That Works 23rd July 2023")?.date), "2023-07-23");
+  assert.equal(d(findDateInText("Sunday Service | July 23, 2023")?.date), "2023-07-23");
+  assert.equal(d(findDateInText("Sun 3 Sept 23 Second Service")?.date), "2023-09-03");
+  assert.equal(d(findDateInText("Recorded 2024-02-11")?.date), "2024-02-11");
+  assert.equal(findDateInText("Psalm 23 verse 1"), null);
+  assert.equal(findDateInText("3 John 2"), null);
+
+  const p = parseEpisodeTitle("The Mindset of a Believer - Sunday 12th March 2023 Pastor Olakunle Zakariya");
+  assert.equal(d(p.date), "2023-03-12");
+  assert.equal(p.title, "The Mindset of a Believer");
+  assert.equal(p.speaker, "Pastor Olakunle Zakariya");
+  const q = parseEpisodeTitle("Walking in Dominion 05-11-2023");
+  assert.equal(q.title, "Walking in Dominion");
+  assert.deepEqual(q.missing, []);
+
+  const now = new Date("2026-11-10T12:00:00Z");
+  // Sunday 11pm in Lagos is still Sunday, even though it's Sunday 22:00 UTC.
+  const sunday = { title: "The Mindset of a Believer", description: "", pubDate: new Date("2026-03-08T22:00:00Z") };
+  // Six episodes put up on one day: a catch-up upload.
+  const catchUp = Array.from({ length: 6 }, (_, i) => ({ title: `Old message ${i}`, description: "", pubDate: new Date(`2026-04-01T1${i}:00:00Z`) }));
+  const counts = uploadDayCounts([sunday, ...catchUp]);
+  assert.deepEqual(episodeDate(sunday, counts, now), { date: new Date("2026-03-08T00:00:00Z"), fromUpload: true });
+  assert.equal(episodeDate(catchUp[0], counts, now), null);
+  assert.deepEqual(episodeDate({ ...catchUp[1], description: "Preached on 14th May 2023 at GCCC Ojodu" }, counts, now), { date: new Date("2023-05-14T00:00:00Z"), fromUpload: false });
+  // A typo'd future date in the title is ignored in favour of the upload day.
+  assert.equal(episodeDate({ ...sunday, title: "Grace 12-03-2028" }, counts, now)?.fromUpload, true);
+});
+
+test("Podbean links match whichever address they were copied from", async () => {
+  const { episodeSlug } = await import("../lib/podbean-parse");
+  assert.equal(episodeSlug("https://gcccpodcasts.podbean.com/e/Faith-That-Works/"), "faith-that-works");
+  assert.equal(episodeSlug("podbean.com/e/faith-that-works?utm=x"), "faith-that-works");
+  assert.equal(episodeSlug("https://www.podbean.com/eu/pb-abc"), null);
+});

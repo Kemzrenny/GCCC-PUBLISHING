@@ -83,6 +83,8 @@ model Message {
   needsDetails   Boolean @default(false)
   // Once a person edits the details, later Podbean checks never overwrite them.
   detailsLocked  Boolean @default(false)
+  // The date is the day the episode was uploaded to Podbean, not confirmed by anyone.
+  dateFromUpload Boolean @default(false)
   // A title the AI suggested from the transcript, offered when Podbean's was unusable.
   suggestedTitle String?
 

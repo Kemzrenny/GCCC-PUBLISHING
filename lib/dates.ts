@@ -62,3 +62,42 @@ export function monthOverdue(label: string | null | undefined, now = new Date())
   const i = MONTH_NAMES.indexOf(label.trim().toLowerCase());
   return i >= 0 && i < now.getUTCMonth();
 }
+
+const MONTH_RE = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const monthIndex = (name: string) => MONTH_NAMES.findIndex((m) => m.startsWith(name.toLowerCase().slice(0, 3))) + 1;
+
+// A date written anywhere in a title or description: "23-07-2026", "2026-07-23",
+// "23rd July 2026", "July 23, 2026", "Sun 23 Jul 26". Returns the text it matched, so it
+// can be taken out of a title.
+export function findDateInText(text: string): { date: Date; match: string } | null {
+  const tries: [RegExp, (m: RegExpExecArray) => Date | null][] = [
+    [/(?<![\d])(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?![\d])/, (m) => makeDate(Number(m[1]), Number(m[2]), Number(m[3]))],
+    [/(?<![\d])(\d{1,2}[-./]\d{1,2}[-./](?:\d{4}|\d{2}))(?![\d])/, (m) => parseDayMonthYear(m[1])],
+    [
+      new RegExp(`(?<![\\w])(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+of)?[\\s,.-]+${MONTH_RE}\\.?[\\s,.-]+(\\d{4}|\\d{2})(?![\\d])`, "i"),
+      (m) => makeDate(year(m[3]), monthIndex(m[2]), Number(m[1])),
+    ],
+    [
+      new RegExp(`(?<![\\w])${MONTH_RE}\\.?[\\s,.-]+(\\d{1,2})(?:st|nd|rd|th)?[\\s,.-]+(\\d{4}|\\d{2})(?![\\d])`, "i"),
+      (m) => makeDate(year(m[3]), monthIndex(m[1]), Number(m[2])),
+    ],
+  ];
+  for (const [re, read] of tries) {
+    const m = re.exec(text);
+    if (!m) continue;
+    const date = read(m);
+    if (date) return { date, match: m[0] };
+  }
+  return null;
+}
+
+function year(y: string) {
+  const n = Number(y);
+  return n < 100 ? n + 2000 : n;
+}
+
+// The calendar day in Lagos (UTC+1) of a moment, as a stored date.
+export function lagosDay(moment: Date): Date {
+  const t = new Date(moment.getTime() + 3_600_000);
+  return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+}

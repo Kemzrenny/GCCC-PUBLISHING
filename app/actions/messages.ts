@@ -108,6 +108,7 @@ export async function checkPodbeanNow(): Promise<ActionResult> {
     if (r.queued) after(kickRunner);
     revalidatePath("/", "layout");
     const parts = [`${r.added} new message${r.added === 1 ? "" : "s"}`];
+    if (r.resolved) parts.push(`${r.resolved} waiting message${r.resolved === 1 ? "" : "s"} filled in`);
     if (r.needsDetails) parts.push(`${r.needsDetails} need details`);
     if (r.queued) parts.push(`${r.queued} queued for transcription`);
     return { ok: `Checked Podbean: ${parts.join(", ")}.` };
@@ -154,7 +155,7 @@ export async function saveDetails(messageId: string, _: ActionResult, form: Form
     await prisma.$transaction([
       prisma.message.update({
         where: { id: messageId },
-        data: { ...next, needsDetails: false, detailsLocked: true, suggestedTitle: null },
+        data: { ...next, needsDetails: false, detailsLocked: true, dateFromUpload: false, suggestedTitle: null },
       }),
       ...(Object.keys(changes).length ? [prisma.messageEdit.create({ data: { messageId, userId: user.id, changes } })] : []),
     ]);
