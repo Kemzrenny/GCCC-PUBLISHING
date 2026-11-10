@@ -33,7 +33,7 @@ export default async function NeedsDetailsPage() {
       <PageHeading
         eyebrow="Needs details"
         title="Name it before we file it."
-        lead="Messages whose title or date couldn’t be worked out. The portal tries the Podbean title, then the episode description, then the day it was uploaded; whatever’s left needs a person."
+        lead="Messages whose title or date couldn’t be worked out. The portal tries the Podbean title, then the episode description, then the day it was uploaded (marked as an upload date, so check those you know); whatever’s left needs a person."
       />
       {total > 0 && reviewer && (
         <section className="flex flex-col gap-3 rounded-xl bg-banner p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
@@ -100,12 +100,6 @@ function WhyWaiting({ report, feedEpisodes }: { report: NonNullable<PodbeanResul
       detail: `Podbean’s feed only lists its latest ${feedEpisodes} episodes, so older ones are read from their own Podbean pages, a batch at a time. Click Fill from Podbean again to carry on. Any that stay here after a few tries have a Podbean link that no longer opens.`,
     },
     { n: report.noTitle, label: "No usable title", detail: "The Podbean title doesn’t say what the message is.", samples: report.samples.noTitle },
-    {
-      n: report.catchUp,
-      label: "Uploaded in a batch",
-      detail: "Several episodes went up on the same day, so that day isn’t when they were preached, and the title has no date.",
-      samples: report.samples.catchUp,
-    },
     { n: report.noDate, label: "No date anywhere", detail: "No date in the title or description, and no upload date.", samples: report.samples.noDate },
     { n: report.notOnPodbean, label: "No Podbean link", detail: "From the old sheet without a link, so Podbean can’t help." },
   ].filter((r) => r.n > 0);

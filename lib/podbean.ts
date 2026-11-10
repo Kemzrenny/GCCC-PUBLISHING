@@ -8,20 +8,19 @@ import {
   isPodbeanEpisode,
   detailsFromEpisodePage,
   audioFromEpisodePage,
-  BUSY_UPLOAD_DAY,
 } from "@/lib/podbean-parse";
 import { enqueue } from "@/lib/jobs";
 import { getSetting, setSetting, markSheetDirty } from "@/lib/settings";
 import { speakerResolver } from "@/lib/speakers";
 import { titleKnown } from "@/lib/needs";
-import { findDateInText, lagosDay, looksLikeFuture, formatDate } from "@/lib/dates";
+import { findDateInText, lagosDay, looksLikeFuture } from "@/lib/dates";
 
 // Checks the GCCC Podbean feed for episodes the portal hasn't seen and adds them to the
 // library, then fills in messages still waiting for a title or date (from Podbean or the old
 // sheet). Podbean only lists its most recent episodes in the feed, so for older ones the
 // portal reads each episode's own page. A date comes from the title, then the description,
-// then the day the episode was published (in Lagos), unless several episodes went up that
-// day in a catch-up upload. Details a person has confirmed are never overwritten.
+// then the day the episode was published (in Lagos), marked as an upload date so anyone
+// can correct it. Details a person has confirmed are never overwritten.
 
 export const feedUrl = () => process.env.PODBEAN_FEED_URL ?? "https://feed.podbean.com/gcccpodcasts/feed.xml";
 
@@ -193,11 +192,6 @@ async function resolveWaiting(
   newIds: string[],
   result: PodbeanResult,
 ): Promise<WaitingReport> {
-  // How many episodes went up on each Lagos day, across the whole library.
-  const days = await prisma.$queryRaw<{ day: Date; n: bigint }[]>`
-    SELECT ("podbeanPublishedAt" + interval '1 hour')::date AS day, COUNT(*) AS n
-    FROM "Message" WHERE "podbeanPublishedAt" IS NOT NULL GROUP BY 1`;
-  const perDay = new Map(days.map((d) => [new Date(d.day).getTime(), Number(d.n)]));
   const newSet = new Set(newIds);
 
   const waiting = await prisma.message.findMany({
@@ -225,18 +219,16 @@ async function resolveWaiting(
 
     let date: Date | null = null;
     let fromUpload = false;
-    let busyDay: Date | null = null;
     if (parsed?.date && !looksLikeFuture(parsed.date)) date = parsed.date;
     if (!date) {
       const d = findDateInText(descriptions.get(m.id) ?? "")?.date;
       if (d && !looksLikeFuture(d)) date = d;
     }
+    // The team chose to use the upload day even for batch uploads; it's marked so it can
+    // be corrected.
     if (!date && m.podbeanPublishedAt) {
-      const day = lagosDay(m.podbeanPublishedAt);
-      if ((perDay.get(day.getTime()) ?? 0) < BUSY_UPLOAD_DAY) {
-        date = day;
-        fromUpload = true;
-      } else busyDay = day;
+      date = lagosDay(m.podbeanPublishedAt);
+      fromUpload = true;
     }
 
     const data: Record<string, unknown> = {};
@@ -256,9 +248,6 @@ async function resolveWaiting(
       } else if (!known) {
         report.noTitle++;
         sample(report.samples.noTitle, label);
-      } else if (busyDay) {
-        report.catchUp++;
-        sample(report.samples.catchUp, `${label} (uploaded ${formatDate(busyDay)})`);
       } else {
         report.noDate++;
         sample(report.samples.noDate, label);

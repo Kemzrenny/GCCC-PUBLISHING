@@ -238,32 +238,18 @@ export function detailsFromEpisodePage(html: string): { title: string | null; de
 
 // ---- Dates from Podbean ----
 
-// Episodes uploaded on the same day as many others were a catch-up upload, so their
-// upload date says nothing about when they were preached.
-export const BUSY_UPLOAD_DAY = 4;
-
-export function uploadDayCounts(episodes: { pubDate: Date | null }[]): Map<number, number> {
-  const counts = new Map<number, number>();
-  for (const ep of episodes) {
-    if (!ep.pubDate) continue;
-    const k = lagosDay(ep.pubDate).getTime();
-    counts.set(k, (counts.get(k) ?? 0) + 1);
-  }
-  return counts;
-}
-
 export type EpisodeDate = { date: Date; fromUpload: boolean } | null;
 
 // The best date for an episode: one written in its title, then in its description, then
-// the day it was uploaded to Podbean (unless that was a catch-up day).
-export function episodeDate(ep: { title: string; description: string; pubDate: Date | null }, counts: Map<number, number>, now = new Date()): EpisodeDate {
+// the day it was uploaded to Podbean.
+export function episodeDate(ep: { title: string; description: string; pubDate: Date | null }, now = new Date()): EpisodeDate {
   const fromTitle = parseEpisodeTitle(ep.title).date;
   if (fromTitle && !looksLikeFuture(fromTitle, now)) return { date: fromTitle, fromUpload: false };
   const fromDescription = findDateInText(ep.description)?.date;
   if (fromDescription && !looksLikeFuture(fromDescription, now)) return { date: fromDescription, fromUpload: false };
   if (ep.pubDate) {
     const day = lagosDay(ep.pubDate);
-    if ((counts.get(day.getTime()) ?? 0) < BUSY_UPLOAD_DAY && !looksLikeFuture(day, now)) return { date: day, fromUpload: true };
+    if (!looksLikeFuture(day, now)) return { date: day, fromUpload: true };
   }
   return null;
 }
