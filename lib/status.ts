@@ -13,19 +13,20 @@ export const STATUS: Record<TranscriptStatus, { label: string; tone: "grey" | "s
   FAILED: { label: "Failed", tone: "red" },
 };
 
-// The library's status tabs. "needs" is the Needs-details flag, not a transcript status.
+// The library's status tabs. "dates" is about the date, not a transcript status: messages
+// still dated by their Podbean upload day, or with no usable title or date.
 export const TABS = [
   { key: "all", label: "All" },
   { key: "todo", label: "Not transcribed" },
   { key: "working", label: "In progress" },
   { key: "review", label: "To review" },
   { key: "approved", label: "Approved" },
-  { key: "needs", label: "Needs details" },
+  { key: "dates", label: "Check dates" },
 ] as const;
 
 export type TabKey = (typeof TABS)[number]["key"];
 
-export const TAB_STATUSES: Record<Exclude<TabKey, "all" | "needs">, TranscriptStatus[]> = {
+export const TAB_STATUSES: Record<Exclude<TabKey, "all" | "dates">, TranscriptStatus[]> = {
   todo: ["NOT_STARTED", "FAILED"],
   working: ["QUEUED", "TRANSCRIBING"],
   review: ["AI_DRAFT", "IN_REVIEW"],

@@ -1,12 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { ArrowUpRight } from "lucide-react";
 import { currentUser } from "@/lib/auth";
 import { libraryPage, libraryStats, readQuery, PAGE_SIZE } from "@/lib/library";
 import { formatDate, monthOverdue } from "@/lib/dates";
 import { PageHeading, StatCard, StatusChip, Empty } from "@/components/ui";
 import LibraryFilters from "@/components/LibraryFilters";
+import Pagination from "@/components/Pagination";
 
 export const metadata = { title: "Message library" };
 
@@ -15,8 +15,9 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
   const query = readQuery(await searchParams);
   const [stats, page] = await Promise.all([libraryStats(), libraryPage(query)]);
   const pct = stats.total ? ((stats.approved / stats.total) * 100).toFixed(1) : "0";
+  const kept = Object.fromEntries(Object.entries(query).filter(([k, v]) => v && k !== "page" && !(k === "tab" && v === "all")));
   const pageHref = (n: number) => {
-    const p = new URLSearchParams(Object.entries(query).filter(([k, v]) => v && k !== "page" && !(k === "tab" && v === "all")));
+    const p = new URLSearchParams(kept);
     if (n > 1) p.set("page", String(n));
     const qs = p.toString();
     return qs ? `/library?${qs}` : "/library";
@@ -39,7 +40,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
             </span>
             <span className="text-[15px] text-muted">Podbean had nothing usable for {stats.needsDetails === 1 ? "it" : "these"}. Listen to the start and fill them in.</span>
           </div>
-          <Link href="/check-dates" className="btn-quiet h-12 px-5">Fill them in</Link>
+          <Link href="/library?tab=dates" className="btn-quiet h-12 px-5">Fill them in</Link>
         </section>
       )}
 
@@ -107,7 +108,10 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
                         )}
                       </td>
                       <td className="border-b border-line px-3 py-4 text-sm text-muted">{m._count.manuals || "—"}</td>
-                      <td className="border-b border-line py-4 pl-3 text-right text-sm whitespace-nowrap text-muted">{formatDate(m.date) || "No date"}</td>
+                      <td className="border-b border-line py-4 pl-3 text-right text-sm whitespace-nowrap text-muted">
+                        {formatDate(m.date) || "No date"}
+                        {m.date && m.dateFromUpload && <div className="mt-0.5 text-xs text-accent">Upload date</div>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -121,14 +125,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
             <span>
               Showing {from.toLocaleString()}–{to.toLocaleString()} of {page.total.toLocaleString()} messages
             </span>
-            <div className="flex gap-2">
-              {page.page > 1 && <Link className="btn-quiet" href={pageHref(page.page - 1)}>Previous</Link>}
-              {page.page < page.pages && (
-                <Link className="btn-quiet" href={pageHref(page.page + 1)}>
-                  Next <ArrowUpRight aria-hidden size={14} className="rotate-45" />
-                </Link>
-              )}
-            </div>
+            <Pagination page={page.page} pages={page.pages} href={pageHref} action="/library" params={kept} />
           </div>
         )}
       </section>

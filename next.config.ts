@@ -29,8 +29,9 @@ const nextConfig: NextConfig = {
       { source: "/", destination: "/library", permanent: false },
       // Speakers moved into Settings.
       { source: "/speakers", destination: "/settings/speakers", permanent: true },
-      // Needs details became Check dates.
-      { source: "/needs-details", destination: "/check-dates", permanent: true },
+      // Needs details, then Check dates, became the library's Check dates filter.
+      { source: "/needs-details", destination: "/library?tab=dates", permanent: false },
+      { source: "/check-dates", destination: "/library?tab=dates", permanent: false },
     ];
   },
 };

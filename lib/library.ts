@@ -10,7 +10,8 @@ export type LibraryQuery = { q?: string; tab?: string; speaker?: string; year?: 
 
 export function readQuery(sp: Record<string, string | string[] | undefined>): Required<LibraryQuery> {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
-  const tab = one(sp.tab);
+  // "needs" was this tab's old name.
+  const tab = one(sp.tab) === "needs" ? "dates" : one(sp.tab);
   return {
     q: one(sp.q).slice(0, 200),
     tab: TABS.some((t) => t.key === tab) ? tab : "all",
@@ -38,7 +39,7 @@ function where(q: Required<LibraryQuery>): Prisma.MessageWhereInput {
     }
   }
   const tab = q.tab as TabKey;
-  if (tab === "needs") and.push({ needsDetails: true });
+  if (tab === "dates") and.push({ OR: [{ needsDetails: true }, { dateFromUpload: true }] });
   else if (tab !== "all") and.push({ status: { in: TAB_STATUSES[tab] } });
   if (q.speaker) and.push({ speaker: q.speaker });
   if (q.year) {
@@ -66,6 +67,7 @@ export async function libraryPage(q: Required<LibraryQuery>) {
         location: true,
         status: true,
         needsDetails: true,
+        dateFromUpload: true,
         assigneeName: true,
         dueLabel: true,
         assignee: { select: { name: true } },

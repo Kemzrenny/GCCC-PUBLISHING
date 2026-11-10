@@ -8,6 +8,7 @@ import { missingDetails, titleKnown } from "@/lib/needs";
 import { PROVIDER_LABELS, isProvider } from "@/lib/transcribe";
 import { StatusChip, Chip } from "@/components/ui";
 import DetailsForm from "@/components/DetailsForm";
+import { confirmDates } from "@/app/actions/dates";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import { readTimeline } from "@/lib/align";
 import ActionButton from "@/components/ActionButton";
@@ -61,6 +62,14 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
         </div>
         <h1 className="font-display text-4xl leading-tight font-semibold sm:text-5xl">{m.title}</h1>
         <p className="text-base text-muted">{meta.join(" · ") || "No details yet"}</p>
+        {reviewer && m.date && m.dateFromUpload && !m.needsDetails && (
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
+            <span>This date is the day it went up on Podbean. Right date? Confirm it, or change it under Edit details.</span>
+            <ActionButton action={confirmDates.bind(null, [{ id: m.id, date: isoDay(m.date) }])} pendingLabel="Confirming…">
+              Date is right
+            </ActionButton>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">

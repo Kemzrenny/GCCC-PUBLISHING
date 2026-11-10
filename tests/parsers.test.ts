@@ -250,3 +250,11 @@ test("an old episode's title and date are read from its Podbean page", async () 
   assert.equal(og.published?.toISOString().slice(0, 10), "2020-01-05");
   assert.equal(detailsFromEpisodePage("<html></html>").title, null);
 });
+
+test("page links show the ends and the pages around the current one", async () => {
+  const { pageList } = await import("../components/Pagination");
+  assert.deepEqual(pageList(1, 3), [1, 2, 3]);
+  assert.deepEqual(pageList(1, 56), [1, 2, 3, 4, 5, "gap", 56]);
+  assert.deepEqual(pageList(20, 56), [1, "gap", 19, 20, 21, "gap", 56]);
+  assert.deepEqual(pageList(56, 56), [1, "gap", 52, 53, 54, 55, 56]);
+});

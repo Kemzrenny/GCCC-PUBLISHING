@@ -6,7 +6,6 @@ const NAMES: Record<string, string> = {
   library: "Message library",
   messages: "Message",
   review: "Review queue",
-  "check-dates": "Check dates",
   settings: "Settings",
   speakers: "Speakers",
 };

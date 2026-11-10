@@ -18,18 +18,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const theme = (await cookies()).get("theme")?.value === "dark" ? "dark" : "light";
   // Restart the transcription queue if it has stalled (runs after the page is sent).
   after(() => nudgeStalledQueue().catch(() => {}));
-  const [review, needs, approved, total] = await Promise.all([
+  const [review, approved, total] = await Promise.all([
     prisma.message.count({ where: { status: { in: ["AI_DRAFT", "IN_REVIEW"] } } }),
-    // Only messages that genuinely need a person (no usable title or date). Upload-day
-    // dates are in use; checking them is optional, so they don't count here.
-    prisma.message.count({ where: { needsDetails: true } }),
     prisma.message.count({ where: { status: "APPROVED" } }),
     prisma.message.count(),
   ]);
 
   return (
     <div className="flex min-h-dvh flex-col lg:flex-row">
-      <Sidebar user={user} counts={{ review, needs, approved, total }} theme={theme} />
+      <Sidebar user={user} counts={{ review, approved, total }} theme={theme} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-5 sm:px-10">
           <Breadcrumb />
