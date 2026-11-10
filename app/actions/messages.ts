@@ -10,6 +10,7 @@ import { checkPodbean } from "@/lib/podbean";
 import { getSettings, markSheetDirty } from "@/lib/settings";
 import { normaliseSpeaker } from "@/lib/podbean-parse";
 import { looksLikeFuture } from "@/lib/dates";
+import { backupSoon } from "@/lib/drive";
 
 export type ActionResult = { ok?: string; error?: string } | null;
 
@@ -119,6 +120,8 @@ export async function saveDetails(messageId: string, _: ActionResult, form: Form
       ...(Object.keys(changes).length ? [prisma.messageEdit.create({ data: { messageId, userId: user.id, changes } })] : []),
     ]);
     await markSheetDirty();
+    // The Doc's name and header use these details: refresh it at the next round.
+    await prisma.$executeRaw`UPDATE "Transcript" SET "driveSyncedAt" = NULL WHERE "messageId" = ${messageId} AND "driveFileId" IS NOT NULL`;
     revalidatePath("/", "layout");
     return { ok: "Saved. Podbean won't overwrite these details." };
   } catch (err) {
@@ -166,6 +169,7 @@ export async function approveTranscript(messageId: string, text: string): Promis
       await tx.message.update({ where: { id: messageId }, data: { status: "APPROVED" } });
     });
     await markSheetDirty();
+    after(() => backupSoon(messageId));
     revalidatePath("/", "layout");
     return { ok: "Approved. It's now in the library for writers." };
   } catch (err) {

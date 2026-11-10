@@ -104,3 +104,15 @@ test("future dates and overdue months", async () => {
   assert.equal(monthOverdue("November", now), false);
   assert.equal(monthOverdue("Soon", now), false);
 });
+
+test("Google Doc name and contents", async () => {
+  const { docName, docHtml, folderYear } = await import("../lib/drive-doc");
+  const m = { title: "Knowing God & the <Kingdom>", date: new Date(Date.UTC(2026, 8, 2)), speaker: "Pastor Olakunle Zakariya" };
+  assert.equal(docName(m), "2026-09-02 Knowing God & the <Kingdom> (Pastor Olakunle Zakariya)");
+  assert.equal(folderYear(null), "Undated");
+  const html = docHtml({ ...m, series: null, location: "Ojodu", sourceUrl: null, portalUrl: "https://x/messages/1", summary: null, themes: ["Sonship"], scriptures: [], text: "Para one.\n\nPara two & more.", approved: false, approvedAt: null, reviewer: null });
+  assert.match(html, /<h1>Knowing God &amp; the &lt;Kingdom&gt;<\/h1>/);
+  assert.match(html, /<p>Para one\.<\/p>\n<p>Para two &amp; more\.<\/p>/);
+  assert.match(html, /AI draft, not yet reviewed/);
+  assert.match(html, /Themes:<\/b> Sonship/);
+});

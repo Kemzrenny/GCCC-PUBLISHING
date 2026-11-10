@@ -85,13 +85,13 @@ const HEADER = [
 export async function buildRows(): Promise<string[][]> {
   const messages = await prisma.message.findMany({
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    include: { manuals: true, transcript: { select: { id: true } }, assignee: { select: { name: true } } },
+    include: { manuals: true, transcript: { select: { id: true, driveUrl: true } }, assignee: { select: { name: true } } },
   });
   const base = appUrl();
   return messages.map((m) => {
     const manual = m.manuals[0];
     const portal = `${base}/messages/${m.id}`;
-    const transcriptLink = m.transcript ? `${portal}#transcript` : (m.externalTranscriptUrl ?? "");
+    const transcriptLink = m.transcript?.driveUrl ?? (m.transcript ? `${portal}#transcript` : (m.externalTranscriptUrl ?? ""));
     const assignee = m.assignee?.name ?? m.assigneeName ?? "";
     return [
       m.legacyId?.toString() ?? "",

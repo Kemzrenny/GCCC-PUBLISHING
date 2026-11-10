@@ -12,6 +12,7 @@ import { syncSheet } from "@/lib/sheets";
 import { setSetting } from "@/lib/settings";
 import { isProvider, providerConfigured } from "@/lib/transcribe";
 import { kickRunner } from "@/lib/jobs";
+import { backupPending, disconnect as disconnectDrive } from "@/lib/drive";
 import type { ActionResult } from "./messages";
 
 const ROLES: Role[] = ["ADMIN", "REVIEWER", "WRITER", "VIEWER"];
@@ -147,6 +148,40 @@ export async function runQueueNow(): Promise<ActionResult> {
     await requireUser(["ADMIN", "REVIEWER"]);
     after(kickRunner);
     return { ok: "Started. Refresh the review queue in a few minutes." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// Backs up every transcript that's new or changed, in rounds, for up to ~3.5 minutes.
+export async function backupAllNow(): Promise<ActionResult> {
+  try {
+    await requireUser(["ADMIN"]);
+    const started = Date.now();
+    let done = 0;
+    let failed = 0;
+    let remaining = 0;
+    do {
+      const r = await backupPending(10);
+      done += r.done;
+      failed += r.failed;
+      remaining = r.remaining;
+      if (r.failed || (!r.done && !r.failed)) break;
+    } while (remaining > 0 && Date.now() - started < 210_000);
+    revalidatePath("/settings");
+    if (failed) return { error: `Backed up ${done}; ${failed} failed. See the problem below.` };
+    return { ok: remaining ? `Backed up ${done}. ${remaining} left: click again, or they'll finish in the scheduled rounds.` : `All transcripts are backed up (${done} just now).` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function disconnectGoogleDrive(): Promise<ActionResult> {
+  try {
+    await requireUser(["ADMIN"]);
+    await disconnectDrive();
+    revalidatePath("/settings");
+    return { ok: "Disconnected. Existing Docs stay in Drive." };
   } catch (err) {
     return fail(err);
   }

@@ -132,6 +132,14 @@ model Transcript {
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
   versions   TranscriptVersion[]
+
+  // The Google Doc backup. Out of date whenever updatedAt is later than driveSyncedAt.
+  driveFileId   String?
+  driveUrl      String?
+  driveSyncedAt DateTime?
+  driveError    String?
+
+  @@index([driveSyncedAt])
 }
 
 // Every saved state of a transcript: the AI draft first, then each human save.

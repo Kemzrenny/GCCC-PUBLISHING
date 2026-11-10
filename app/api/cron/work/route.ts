@@ -3,6 +3,7 @@ import { checkPodbean } from "@/lib/podbean";
 import { runJobs, kickRunner } from "@/lib/jobs";
 import { syncSheet, sheetConfigured } from "@/lib/sheets";
 import { getSetting, setSetting } from "@/lib/settings";
+import { backupPending } from "@/lib/drive";
 
 // The scheduled round (vercel.json): look for new Podbean episodes, move the transcription
 // queue along, and bring the Google Sheet up to date if anything changed.
@@ -26,6 +27,11 @@ export async function GET(req: Request) {
     if (jobs.remaining > 0) after(kickRunner);
   } catch (err) {
     report.jobs = { error: err instanceof Error ? err.message : String(err) };
+  }
+  try {
+    report.drive = await backupPending(25);
+  } catch (err) {
+    report.drive = { error: err instanceof Error ? err.message : String(err) };
   }
   if (sheetConfigured() && (await getSetting("sheetDirty")) === "1") {
     try {

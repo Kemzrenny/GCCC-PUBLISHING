@@ -8,6 +8,7 @@ import { transcribePart, isProvider, type Provider } from "@/lib/transcribe";
 import { analyseTranscript, geminiConfigured } from "@/lib/gemini";
 import { getSetting, markSheetDirty } from "@/lib/settings";
 import { appUrl } from "@/lib/site";
+import { backupSoon } from "@/lib/drive";
 
 // The transcription queue. A sermon is too long to transcribe inside one server request,
 // so each job moves forward a step at a time:
@@ -199,6 +200,7 @@ async function finish(job: TranscriptionJob) {
   });
   await cleanupParts(job);
   await markSheetDirty();
+  await backupSoon(message.id);
 }
 
 async function step(job: TranscriptionJob) {

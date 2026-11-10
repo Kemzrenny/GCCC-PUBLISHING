@@ -11,6 +11,7 @@ Phase 1 (this release):
 - **Review**: a reviewer corrects the draft against the audio and approves it. Every save is kept as a version.
 - **Sheet import**: a one-time (repeatable) import of the old Publishing Central Content System sheet, matched by its ID and Podbean link.
 - **Google Sheet mirror**: a read-only copy of the library written to a `Portal` tab of the sheet.
+- **Google Docs backup**: every transcript saved as a Google Doc in a `GCCC Publishing Transcripts` folder (one subfolder per year), created when the AI draft is ready and updated after edits and approval. Connected once from Settings.
 - **Team**: invite-only accounts with four roles: Admin, Reviewer, Writer, Viewer.
 
 Built on the same stack as The Doer Life: Next.js 16, React 19, Tailwind 4, Prisma on Neon

@@ -20,6 +20,13 @@ export const SETTING_DEFAULTS = {
   sheetLastError: "",
   podbeanLastCheck: "",
   podbeanLastResult: "",
+  // Google Drive backup of transcripts. The refresh token is stored encrypted.
+  driveRefreshToken: "",
+  driveAccount: "",
+  driveRootFolderId: "",
+  // {"2026": "<folder id>", ...}
+  driveYearFolders: "{}",
+  driveLastError: "",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;

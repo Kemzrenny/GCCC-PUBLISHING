@@ -8,25 +8,42 @@ import { feedUrl } from "@/lib/podbean";
 import { PageHeading } from "@/components/ui";
 import ActionButton from "@/components/ActionButton";
 import { ImportForm, TranscriptionSettings, InviteForm, InviteRow, MemberRow } from "@/components/SettingsForms";
-import { syncSheetNow, runQueueNow } from "@/app/actions/admin";
+import { syncSheetNow, runQueueNow, backupAllNow, disconnectGoogleDrive } from "@/app/actions/admin";
+import { driveClientConfigured, redirectUri } from "@/lib/drive";
+import { prisma as db } from "@/lib/prisma";
 import { checkPodbeanNow } from "@/app/actions/messages";
 
 export const metadata = { title: "Settings" };
+// "Back up all now" can run for a few minutes.
+export const maxDuration = 300;
 
 function when(iso: string) {
   if (!iso) return "Never";
   return new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" });
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: PageProps<"/settings">) {
+  const driveResult = (await searchParams).drive;
   const me = await currentUser();
   if (me.role !== "ADMIN") redirect("/library");
   const [s, users, invites, queue] = await Promise.all([
-    getSettings(["transcribeProvider", "batchSize", "batchOrder", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult"]),
+    getSettings(["transcribeProvider", "batchSize", "batchOrder", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult", "driveRefreshToken", "driveAccount", "driveLastError", "driveRootFolderId"]),
     prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] }),
     prisma.invite.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
   ]);
+  const [backedUp, transcripts] = await Promise.all([
+    db.transcript.count({ where: { driveUrl: { not: null } } }),
+    db.transcript.count(),
+  ]);
+  const driveOn = driveClientConfigured() && !!s.driveRefreshToken;
+  const DRIVE_RESULT: Record<string, string> = {
+    connected: "Google Drive is connected.",
+    cancelled: "Connecting was cancelled.",
+    expired: "That took too long or came from another window. Try again.",
+    "missing-client": "Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in Vercel first.",
+  };
+  const driveMessage = typeof driveResult === "string" ? (DRIVE_RESULT[driveResult] ?? driveResult) : null;
   let podbean: { added?: number; checked?: number } = {};
   try {
     podbean = JSON.parse(s.podbeanLastResult || "{}");
@@ -82,6 +99,50 @@ export default async function SettingsPage() {
           )}
         </section>
       </div>
+
+      <section id="drive" className="card flex scroll-mt-6 flex-col gap-3 p-6">
+        <h2 className="font-display text-2xl font-semibold">Google Docs backup</h2>
+        <p className="text-sm text-muted">
+          Every transcript is saved as a Google Doc in a <strong className="text-ink">GCCC Publishing Transcripts</strong> folder, one subfolder per year. A Doc is made when
+          the AI draft is ready and updated when someone edits or approves it. The portal can only see the folder and Docs it made.
+        </p>
+        {driveMessage && <p role="status" className={`text-sm ${driveResult === "connected" ? "text-accent" : "text-alert"}`}>{driveMessage}</p>}
+        {!driveClientConfigured() ? (
+          <p className="text-sm text-muted">
+            Not set up. Create a Google OAuth client and add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in Vercel. Its authorised redirect URI must be{" "}
+            <code className="rounded bg-field px-1.5 py-0.5 text-ink">{redirectUri()}</code>
+          </p>
+        ) : driveOn ? (
+          <>
+            <p className="text-sm">
+              Connected to <strong>{s.driveAccount || "a Google account"}</strong> · {backedUp} of {transcripts} transcripts backed up
+              {s.driveRootFolderId && (
+                <>
+                  {" "}·{" "}
+                  <a className="link" href={`https://drive.google.com/drive/folders/${s.driveRootFolderId}`} target="_blank" rel="noreferrer">
+                    Open the folder
+                  </a>
+                </>
+              )}
+            </p>
+            {s.driveLastError && <p className="text-sm text-alert">Last problem: {s.driveLastError}</p>}
+            <div className="flex flex-wrap gap-3">
+              <ActionButton action={backupAllNow} className="btn-primary" pendingLabel="Backing up… this can take a few minutes">
+                Back up all now
+              </ActionButton>
+              <a className="btn-quiet" href="/api/google/connect">Reconnect</a>
+              <ActionButton action={disconnectGoogleDrive} confirm="Stop backing up to this Google account? Existing Docs stay in Drive.">
+                Disconnect
+              </ActionButton>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <a className="btn-primary" href="/api/google/connect">Connect Google Drive</a>
+            <span className="text-sm text-muted">Use the Google account the Publishing team should own the Docs, ideally a church account.</span>
+          </div>
+        )}
+      </section>
 
       <section className="card flex flex-col gap-5 p-6">
         <h2 className="font-display text-2xl font-semibold">Team</h2>

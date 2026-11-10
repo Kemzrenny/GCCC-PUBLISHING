@@ -85,6 +85,14 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                     : `Drafted by ${isProvider(m.transcript.provider) ? PROVIDER_LABELS[m.transcript.provider] : m.transcript.provider}`}
                   {m.transcript.reviewer && ` · reviewed by ${m.transcript.reviewer.name}`}
                   {m.transcript._count.versions > 1 && ` · ${m.transcript._count.versions} versions`}
+                  {m.transcript.driveUrl && (
+                    <>
+                      {" · "}
+                      <a className="link inline-flex items-center gap-1" href={m.transcript.driveUrl} target="_blank" rel="noreferrer">
+                        Google Doc <ExternalLink aria-hidden size={13} />
+                      </a>
+                    </>
+                  )}
                 </span>
               )}
             </div>
