@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { parseFeed, parseEpisodeTitle } from "@/lib/podbean-parse";
+import { parseFeed, parseEpisodeTitle, urlVariants } from "@/lib/podbean-parse";
 import { enqueue } from "@/lib/jobs";
 import { getSetting, setSetting, markSheetDirty } from "@/lib/settings";
 
@@ -24,7 +24,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
   for (const ep of episodes) {
     const existing = await prisma.message.findFirst({
       where: {
-        OR: [{ podbeanGuid: ep.guid }, ...(ep.link ? [{ sourceUrl: ep.link }] : []), ...(ep.audioUrl ? [{ audioUrl: ep.audioUrl }] : [])],
+        OR: [{ podbeanGuid: ep.guid }, ...(ep.link ? [{ sourceUrl: { in: urlVariants(ep.link) } }] : []), ...(ep.audioUrl ? [{ audioUrl: ep.audioUrl }] : [])],
       },
     });
     const parsed = parseEpisodeTitle(ep.title);

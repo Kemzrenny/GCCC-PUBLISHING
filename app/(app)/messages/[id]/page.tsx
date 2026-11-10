@@ -12,6 +12,7 @@ import TranscriptEditor from "@/components/TranscriptEditor";
 import ActionButton from "@/components/ActionButton";
 import { queueTranscription, cancelTranscription } from "@/app/actions/messages";
 import { jobLooksStalled } from "@/lib/jobs";
+import { isPodbeanEpisode } from "@/lib/podbean-parse";
 
 export async function generateMetadata({ params }: PageProps<"/messages/[id]">) {
   const m = await prisma.message.findUnique({ where: { id: (await params).id }, select: { title: true } });
@@ -139,11 +140,13 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                   </p>
                 ) : (
                   <p className="text-[15px] text-muted">
-                    {m.audioUrl ? "Not transcribed yet." : "No audio from Podbean yet. It's linked automatically the next time Podbean is checked."}
+                    {m.audioUrl || isPodbeanEpisode(m.sourceUrl)
+                      ? "Not transcribed yet."
+                      : "No Podbean link for this message. Add its Podbean episode link to the sheet and import again, or wait for it to appear in the feed."}
                   </p>
                 )}
                 {job?.status === "FAILED" && <p className="text-sm text-alert">The last attempt failed: {job.error}</p>}
-                {reviewer && m.audioUrl && (
+                {reviewer && (m.audioUrl || isPodbeanEpisode(m.sourceUrl)) && (
                   <div>
                     <ActionButton action={queueTranscription.bind(null, m.id)} className="btn-primary" pendingLabel="Queueing…">
                       {job?.status === "FAILED" ? "Try again" : m.externalTranscriptUrl ? "Transcribe in the portal" : "Transcribe now"}

@@ -11,7 +11,8 @@ import { ImportForm, TranscriptionSettings, InviteForm, InviteRow, MemberRow } f
 import { syncSheetNow, runQueueNow, backupAllNow, disconnectGoogleDrive } from "@/app/actions/admin";
 import { driveClientConfigured, redirectUri } from "@/lib/drive";
 import { prisma as db } from "@/lib/prisma";
-import { checkPodbeanNow } from "@/app/actions/messages";
+import { checkPodbeanNow, runNextBatch } from "@/app/actions/messages";
+import { HAS_AUDIO_SOURCE } from "@/lib/jobs";
 
 export const metadata = { title: "Settings" };
 // "Back up all now" can run for a few minutes.
@@ -31,6 +32,11 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] }),
     prisma.invite.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
+  ]);
+  const untranscribed = { status: "NOT_STARTED" as const, externalTranscriptUrl: null };
+  const [ready, noLink] = await Promise.all([
+    db.message.count({ where: { ...untranscribed, ...HAS_AUDIO_SOURCE } }),
+    db.message.count({ where: { ...untranscribed, NOT: HAS_AUDIO_SOURCE } }),
   ]);
   const [backedUp, transcripts] = await Promise.all([
     db.transcript.count({ where: { driveUrl: { not: null } } }),
@@ -59,10 +65,31 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       </section>
 
       <section className="card flex flex-col gap-5 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-2xl font-semibold">Transcription</h2>
-          <ActionButton action={runQueueNow}>Run the queue now{queue ? ` (${queue} waiting)` : ""}</ActionButton>
+        <h2 className="font-display text-2xl font-semibold">Transcription</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl bg-field/60 p-4">
+            <div className="font-display text-3xl font-semibold">{queue}</div>
+            <div className="text-sm text-muted">in the queue now</div>
+          </div>
+          <div className="rounded-xl bg-field/60 p-4">
+            <div className="font-display text-3xl font-semibold">{ready.toLocaleString()}</div>
+            <div className="text-sm text-muted">ready to transcribe</div>
+          </div>
+          <div className="rounded-xl bg-field/60 p-4">
+            <div className="font-display text-3xl font-semibold">{noLink.toLocaleString()}</div>
+            <div className="text-sm text-muted">not transcribed, no Podbean link</div>
+          </div>
         </div>
+        <div className="flex flex-wrap items-start gap-3">
+          <ActionButton action={runNextBatch} className="btn-primary" pendingLabel="Queueing…">
+            Queue the next {s.batchSize} messages
+          </ActionButton>
+          <ActionButton action={runQueueNow} pendingLabel="Starting…">Resume the queue</ActionButton>
+        </div>
+        <p className="text-xs text-muted">
+          Queue adds the next untranscribed messages ({s.batchOrder === "oldest" ? "oldest" : "newest"} first). Resume restarts work on messages already
+          in the queue if it seems stuck. It doesn’t add new ones.
+        </p>
         <TranscriptionSettings
           values={s}
           providers={PROVIDERS.map((p) => ({ key: p, label: PROVIDER_LABELS[p], ready: providerConfigured(p) }))}

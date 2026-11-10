@@ -146,8 +146,10 @@ export async function setTheme(theme: "light" | "dark") {
 export async function runQueueNow(): Promise<ActionResult> {
   try {
     await requireUser(["ADMIN", "REVIEWER"]);
+    const waiting = await prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } });
+    if (!waiting) return { ok: "Nothing is in the queue. Use “Queue the next messages” to add some." };
     after(kickRunner);
-    return { ok: "Started. Refresh the review queue in a few minutes." };
+    return { ok: `Restarted ${waiting} queued transcription${waiting === 1 ? "" : "s"}. Check the review queue in a few minutes.` };
   } catch (err) {
     return fail(err);
   }

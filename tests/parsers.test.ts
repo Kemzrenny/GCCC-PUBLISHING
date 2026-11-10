@@ -116,3 +116,15 @@ test("Google Doc name and contents", async () => {
   assert.match(html, /AI draft, not yet reviewed/);
   assert.match(html, /Themes:<\/b> Sonship/);
 });
+
+test("audio from a Podbean episode page", async () => {
+  const { audioFromEpisodePage, isPodbeanEpisode, urlVariants } = await import("../lib/podbean-parse");
+  const ld = `<script type="application/ld+json">{"@type":"PodcastEpisode","url":"https:\\/\\/gcccpodcasts.podbean.com\\/e\\/x\\/","associatedMedia":{"@type":"MediaObject","contentUrl":"https:\\/\\/mcdn.podbean.com\\/mf\\/web\\/abc\\/file.mp3"}}</script>`;
+  assert.equal(audioFromEpisodePage(ld), "https://mcdn.podbean.com/mf/web/abc/file.mp3");
+  assert.equal(audioFromEpisodePage(`<meta property="og:audio" content="https://mcdn.podbean.com/mf/web/d/e.mp3?x=1&amp;y=2">`), "https://mcdn.podbean.com/mf/web/d/e.mp3?x=1&y=2");
+  assert.equal(audioFromEpisodePage(`<div data-src="https://mcdn.podbean.com/mf/play/z/q.m4a"></div>`), "https://mcdn.podbean.com/mf/play/z/q.m4a");
+  assert.equal(audioFromEpisodePage("<html>nothing</html>"), null);
+  assert.equal(isPodbeanEpisode("https://gcccpodcasts.podbean.com/e/22-03-2026/"), true);
+  assert.equal(isPodbeanEpisode("https://docs.google.com/x"), false);
+  assert.ok(urlVariants("https://gcccpodcasts.podbean.com/e/abc").includes("https://gcccpodcasts.podbean.com/e/abc/"));
+});

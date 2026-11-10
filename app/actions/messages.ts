@@ -27,7 +27,7 @@ export async function queueTranscription(messageId: string): Promise<ActionResul
   try {
     await requireUser([...REVIEWERS]);
     const queued = await enqueue([messageId], { force: true });
-    if (!queued) return { error: "This message has no audio from Podbean yet, or it's already being transcribed." };
+    if (!queued) return { error: "This message has no Podbean link to get the audio from, or it's already being transcribed." };
     after(kickRunner);
     revalidatePath(`/messages/${messageId}`);
     revalidatePath("/library");
@@ -42,7 +42,14 @@ export async function runNextBatch(): Promise<ActionResult> {
     await requireUser([...REVIEWERS]);
     const s = await getSettings(["batchSize", "batchOrder"]);
     const { queued } = await enqueueBatch(Number(s.batchSize) || 10, s.batchOrder === "oldest" ? "oldest" : "newest");
-    if (!queued) return { ok: "Nothing to queue: every message with audio is transcribed or already in progress." };
+    if (!queued) {
+      const noLink = await prisma.message.count({ where: { status: "NOT_STARTED", externalTranscriptUrl: null, audioUrl: null, NOT: { sourceUrl: { contains: "podbean.com/e/" } } } });
+      return {
+        ok: noLink
+          ? `Nothing to queue. ${noLink} untranscribed message${noLink === 1 ? " has" : "s have"} no Podbean link, so there's no audio to transcribe.`
+          : "Nothing to queue: every message is transcribed or already in progress.",
+      };
+    }
     after(kickRunner);
     revalidatePath("/", "layout");
     return { ok: `Queued ${queued} message${queued === 1 ? "" : "s"} for transcription.` };

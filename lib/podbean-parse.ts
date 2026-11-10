@@ -143,3 +143,52 @@ export function parseEpisodeTitle(raw: string): ParsedTitle {
   if (!date) missing.push("date");
   return { title, date, speaker, missing };
 }
+
+// ---- Episode pages ----
+
+// Is this a Podbean episode page (where the audio can be looked up)?
+export function isPodbeanEpisode(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return /(^|\.)podbean\.com$/i.test(u.hostname) && u.pathname.startsWith("/e/");
+  } catch {
+    return false;
+  }
+}
+
+// The same page written slightly differently (http/https, trailing slash, letter case,
+// a query string) should count as the same episode.
+export function urlVariants(url: string): string[] {
+  try {
+    const u = new URL(url.trim());
+    const path = u.pathname.replace(/\/+$/, "");
+    const hosts = [u.hostname.toLowerCase()];
+    const out = new Set<string>();
+    for (const proto of ["https:", "http:"]) for (const h of hosts) for (const p of [path, `${path}/`]) out.add(`${proto}//${h}${p}`);
+    out.add(url);
+    return [...out];
+  } catch {
+    return [url];
+  }
+}
+
+// The audio file's address on a Podbean episode page: the page's structured data
+// (associatedMedia.contentUrl), then its og:audio tag, then any Podbean audio link.
+export function audioFromEpisodePage(html: string): string | null {
+  const clean = (s: string) => decodeEntities(s.replace(/\\\//g, "/"));
+  const isAudio = (s: string) => /^https?:\/\//i.test(s) && /\.(mp3|m4a|aac|wav|ogg)(\?|$)/i.test(s);
+  for (const block of html.match(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) ?? []) {
+    const media = /"associatedMedia"\s*:\s*\{([^}]+)\}/.exec(block);
+    for (const m of (media?.[1] ?? block).matchAll(/"contentUrl"\s*:\s*"([^"]+)"/g)) {
+      const url = clean(m[1]);
+      if (isAudio(url)) return url;
+    }
+  }
+  for (const prop of ["og:audio", "og:audio:url", "og:audio:secure_url"]) {
+    const m = new RegExp(`<meta[^>]+property=["']${prop}["'][^>]+content=["']([^"']+)`, "i").exec(html) ?? new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${prop}["']`, "i").exec(html);
+    if (m && isAudio(clean(m[1]))) return clean(m[1]);
+  }
+  const any = /https?:\\?\/\\?\/[a-z0-9.-]*podbean\.com\\?\/[^"'\s<>]+?\.(?:mp3|m4a)/i.exec(html);
+  return any ? clean(any[0]) : null;
+}

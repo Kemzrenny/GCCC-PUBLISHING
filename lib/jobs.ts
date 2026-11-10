@@ -9,6 +9,8 @@ import { analyseTranscript, geminiConfigured } from "@/lib/gemini";
 import { getSetting, markSheetDirty } from "@/lib/settings";
 import { appUrl } from "@/lib/site";
 import { backupSoon } from "@/lib/drive";
+import { audioFromEpisodePage, isPodbeanEpisode } from "@/lib/podbean-parse";
+import type { Prisma } from "@prisma/client";
 
 // The transcription queue. A sermon is too long to transcribe inside one server request,
 // so each job moves forward a step at a time:
@@ -29,6 +31,12 @@ function extFromUrl(url: string): string {
   return m ? m[1].toLowerCase() : "mp3";
 }
 
+// A message can be transcribed if it has an audio link, or a Podbean episode link the audio
+// can be looked up from (older messages from the sheet that aren't in the feed).
+export const HAS_AUDIO_SOURCE: Prisma.MessageWhereInput = {
+  OR: [{ audioUrl: { not: null } }, { sourceUrl: { contains: "podbean.com/e/" } }],
+};
+
 // Queue transcription for these messages. Messages that already have a transcript or an
 // active job are skipped. Returns how many were queued.
 export async function enqueue(messageIds: string[], opts: { batchId?: string; force?: boolean } = {}): Promise<number> {
@@ -36,7 +44,7 @@ export async function enqueue(messageIds: string[], opts: { batchId?: string; fo
   const candidates = await prisma.message.findMany({
     where: {
       id: { in: messageIds },
-      audioUrl: { not: null },
+      ...HAS_AUDIO_SOURCE,
       ...(opts.force ? {} : { status: { in: ["NOT_STARTED", "FAILED"] } }),
       jobs: { none: { status: { in: ["PENDING", "RUNNING"] } } },
     },
@@ -58,7 +66,7 @@ export async function enqueueBatch(size: number, order: "newest" | "oldest"): Pr
   const next = await prisma.message.findMany({
     where: {
       status: "NOT_STARTED",
-      audioUrl: { not: null },
+      ...HAS_AUDIO_SOURCE,
       externalTranscriptUrl: null,
       jobs: { none: { status: { in: ["PENDING", "RUNNING"] } } },
     },
@@ -110,13 +118,22 @@ async function cleanupParts(job: TranscriptionJob) {
 
 async function prepare(job: TranscriptionJob) {
   const message = await prisma.message.findUniqueOrThrow({ where: { id: job.messageId } });
-  if (!message.audioUrl) throw new Error("This message has no audio link from Podbean.");
-  const res = await fetch(message.audioUrl, { redirect: "follow" });
+  let audioUrl = message.audioUrl;
+  if (!audioUrl && isPodbeanEpisode(message.sourceUrl)) {
+    // Not in the feed: read the audio's address off the episode page.
+    const page = await fetch(message.sourceUrl!, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 (GCCC Publishing Portal)" } });
+    if (!page.ok) throw new Error(`Couldn't open the Podbean episode page (${page.status}). Check the message's Podbean link.`);
+    audioUrl = audioFromEpisodePage(await page.text());
+    if (!audioUrl) throw new Error("Couldn't find the audio on the Podbean episode page. Check the message's Podbean link.");
+    await prisma.message.update({ where: { id: message.id }, data: { audioUrl } });
+  }
+  if (!audioUrl) throw new Error("This message has no audio or Podbean link.");
+  const res = await fetch(audioUrl, { redirect: "follow" });
   if (!res.ok) throw new Error(`Couldn't download the audio (${res.status}).`);
   const size = Number(res.headers.get("content-length") ?? 0);
   if (size > MAX_AUDIO_BYTES) throw new Error("The audio file is too large to process.");
   const buffer = Buffer.from(await res.arrayBuffer());
-  const ext = extFromUrl(message.audioUrl);
+  const ext = extFromUrl(audioUrl);
   const { total, parts } = await splitAudio(buffer, ext, PART_SECONDS);
   const pieces = parts ?? [{ buffer, durationSec: total, ext, mime: ext === "mp3" ? "audio/mpeg" : `audio/${ext}` }];
   const stored: Part[] = [];
