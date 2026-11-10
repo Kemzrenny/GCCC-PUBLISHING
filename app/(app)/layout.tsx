@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Search, RefreshCw } from "lucide-react";
 import { currentUser, canReview } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { after } from "next/server";
+import { nudgeStalledQueue } from "@/lib/jobs";
 import Sidebar from "@/components/Sidebar";
 import ActionButton from "@/components/ActionButton";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -11,6 +13,8 @@ import { checkPodbeanNow } from "@/app/actions/messages";
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await currentUser();
   const theme = (await cookies()).get("theme")?.value === "dark" ? "dark" : "light";
+  // Restart the transcription queue if it has stalled (runs after the page is sent).
+  after(() => nudgeStalledQueue().catch(() => {}));
   const [review, needs, approved, total] = await Promise.all([
     prisma.message.count({ where: { status: { in: ["AI_DRAFT", "IN_REVIEW"] } } }),
     prisma.message.count({ where: { needsDetails: true } }),

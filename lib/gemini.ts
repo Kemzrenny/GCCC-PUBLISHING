@@ -22,7 +22,8 @@ function ai(): GoogleGenAI {
   if (!process.env.GEMINI_API_KEY) throw new GeminiError("other", "GEMINI_API_KEY is not set.");
   client ??= new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: { retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 2 } },
+    // A hard limit per request, so one slow answer can't use up a whole queue run.
+    httpOptions: { timeout: 120_000, retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 2 } },
   });
   return client;
 }

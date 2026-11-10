@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDuration } from "@/lib/dates";
 import { PageHeading, StatusChip, Empty } from "@/components/ui";
+import { jobLooksStalled } from "@/lib/jobs";
 
 export const metadata = { title: "Review queue" };
 
@@ -80,12 +81,20 @@ export default async function ReviewPage() {
             <ul className="flex flex-col gap-2 text-sm">
               {working.map((j) => {
                 const parts = (j.parts as unknown[] | null)?.length ?? 0;
+                const stalled = jobLooksStalled(j);
                 return (
-                  <li key={j.id} className="flex justify-between gap-3">
-                    <Link className="truncate hover:underline" href={`/messages/${j.message.id}`}>{j.message.title}</Link>
-                    <span className="shrink-0 text-muted">
-                      {j.status === "PENDING" ? "Queued" : j.step === "PART" ? `Part ${Math.min(j.nextPart + 1, parts)} of ${parts}` : j.step === "FINISH" ? "Finishing" : "Preparing"}
-                    </span>
+                  <li key={j.id} className="flex flex-col gap-0.5">
+                    <div className="flex justify-between gap-3">
+                      <Link className="truncate hover:underline" href={`/messages/${j.message.id}`}>{j.message.title}</Link>
+                      <span className="shrink-0 text-muted">
+                        {j.status === "PENDING" ? "Queued" : j.step === "PART" ? `Part ${Math.min(j.nextPart + 1, parts)} of ${parts}` : j.step === "FINISH" ? "Finishing" : "Preparing"}
+                      </span>
+                    </div>
+                    {j.error ? (
+                      <span className="text-xs text-alert">Retrying ({j.attempts} of 3) after: {j.error.slice(0, 160)}</span>
+                    ) : (
+                      stalled && <span className="text-xs text-muted">Paused. Restarting now; refresh in a minute.</span>
+                    )}
                   </li>
                 );
               })}

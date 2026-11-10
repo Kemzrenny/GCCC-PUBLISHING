@@ -230,8 +230,9 @@ async function fail(job: TranscriptionJob, err: unknown) {
 export async function runJobs(budgetMs: number): Promise<{ steps: number; remaining: number }> {
   const started = Date.now();
   let steps = 0;
-  // Each step can take a few minutes (a download, or one part); don't start one late.
-  while (Date.now() - started < budgetMs * 0.4) {
+  // A step (a download, or one part) can take up to ~2 minutes, so only start one early in
+  // the run. Starting late risks being cut off mid-step, which also loses the hand-over.
+  while (Date.now() - started < budgetMs * 0.2) {
     const job = await claimNext();
     if (!job) break;
     try {
@@ -256,4 +257,29 @@ export async function kickRunner() {
     headers: { Authorization: `Bearer ${secret}` },
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
+}
+
+// The safety net. If a run is ever cut off before it hands over, the queue would sit until
+// the next scheduled round. Page loads call this: when work is waiting and no run has been
+// active for a few minutes, it starts one. Claims are atomic, so an extra start is harmless.
+let lastNudge = 0;
+export async function nudgeStalledQueue() {
+  if (Date.now() - lastNudge < 60_000) return;
+  const stale = new Date(Date.now() - LOCK_MS);
+  const quiet = new Date(Date.now() - 2 * 60_000);
+  const [active, waiting] = await Promise.all([
+    prisma.transcriptionJob.count({ where: { status: "RUNNING", lockedAt: { gte: stale } } }),
+    prisma.transcriptionJob.count({
+      where: { status: { in: ["PENDING", "RUNNING"] }, OR: [{ lockedAt: null }, { lockedAt: { lt: stale } }], updatedAt: { lt: quiet } },
+    }),
+  ]);
+  if (active || !waiting) return;
+  lastNudge = Date.now();
+  await kickRunner();
+}
+
+// True when a job has had no progress for a while (shown as "Paused" until it resumes).
+export function jobLooksStalled(job: { lockedAt: Date | null; updatedAt: Date }, now = Date.now()) {
+  const idle = now - job.updatedAt.getTime();
+  return idle > LOCK_MS && (!job.lockedAt || now - job.lockedAt.getTime() > LOCK_MS);
 }

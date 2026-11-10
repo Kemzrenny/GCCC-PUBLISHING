@@ -11,6 +11,7 @@ import DetailsForm from "@/components/DetailsForm";
 import TranscriptEditor from "@/components/TranscriptEditor";
 import ActionButton from "@/components/ActionButton";
 import { queueTranscription, cancelTranscription } from "@/app/actions/messages";
+import { jobLooksStalled } from "@/lib/jobs";
 
 export async function generateMetadata({ params }: PageProps<"/messages/[id]">) {
   const m = await prisma.message.findUnique({ where: { id: (await params).id }, select: { title: true } });
@@ -97,7 +98,11 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                     {activeJob.step === "FINISH" && "Putting the transcript together"}
                   </span>
                   <span className="text-sm text-muted">
-                    {activeJob.error ? `Retrying after a problem: ${activeJob.error}` : "This page shows the result once it's ready. Refresh to check."}
+                    {activeJob.error
+                      ? `Retrying (${activeJob.attempts} of 3) after a problem: ${activeJob.error}`
+                      : jobLooksStalled(activeJob)
+                        ? "Paused. It restarts on its own now; refresh in a minute."
+                        : "This page shows the result once it's ready. Refresh to check."}
                   </span>
                 </div>
                 {reviewer && (
