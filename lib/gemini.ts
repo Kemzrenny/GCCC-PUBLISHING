@@ -5,6 +5,7 @@ import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { z } from "zod";
+import { cleanTimeline } from "@/lib/align";
 
 // Gemini, set up the way The Doer Life uses it: the interactions API, a light model for
 // short work, a careful one where accuracy matters, and a fallback when one is busy.
@@ -172,4 +173,45 @@ export async function analyseTranscript(text: string, context: { title?: string 
   } catch {
     throw new GeminiError("invalid_output", "Gemini's analysis didn't match the expected shape.");
   }
+}
+
+// ---- Timings (for following along while listening) ----
+
+const timelineSchema = {
+  type: "object",
+  properties: {
+    segments: {
+      type: "array",
+      description: "Every sentence spoken, in order. Split very long sentences at natural pauses so no segment is longer than about 20 words.",
+      items: {
+        type: "object",
+        properties: {
+          start: { type: "string", description: "When this sentence starts, as MM:SS from the beginning of this audio clip." },
+          text: { type: "string", description: "The words spoken, exactly as said." },
+        },
+        required: ["start", "text"],
+      },
+    },
+  },
+  required: ["segments"],
+};
+
+const TIMELINE_INSTRUCTION = `This is part of a sermon recorded at Glory Centre Community Church (GCCC), Lagos, Nigeria.
+List every sentence spoken, in order, with the time it starts from the beginning of this clip.
+- Times are MM:SS from the start of this clip (the clip starts at 00:00). Be precise: they will be used to highlight each sentence as it is spoken.
+- Write the words exactly as said, in the language spoken. Keep Yoruba or Pidgin phrases as spoken.
+- Include the congregation's responses only if they are clear (e.g. "Amen").
+- If there is no intelligible speech, return an empty list.
+Respond only with the JSON described by the schema.`;
+
+export async function geminiTimeline(buffer: Buffer, mimeType: string, durationSec?: number) {
+  const audio = await uploadAudio(buffer, mimeType);
+  const { text } = await callGemini([{ type: "text", text: TIMELINE_INSTRUCTION }, audio], timelineSchema, PRIMARY_MODEL);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new GeminiError("invalid_output", "Gemini's timings weren't readable.");
+  }
+  return cleanTimeline(parsed, durationSec);
 }

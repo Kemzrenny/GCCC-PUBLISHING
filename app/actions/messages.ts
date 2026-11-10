@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { enqueue, enqueueBatch, kickRunner, cancelJob } from "@/lib/jobs";
+import { enqueue, enqueueBatch, enqueueTimings, kickRunner, cancelJob } from "@/lib/jobs";
+import { geminiConfigured } from "@/lib/gemini";
 import { checkPodbean } from "@/lib/podbean";
 import { getSettings, markSheetDirty } from "@/lib/settings";
 import { looksLikeFuture } from "@/lib/dates";
@@ -53,6 +54,37 @@ export async function runNextBatch(): Promise<ActionResult> {
     after(kickRunner);
     revalidatePath("/", "layout");
     return { ok: `Queued ${queued} message${queued === 1 ? "" : "s"} for transcription.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ---- Timings (follow along while listening) ----
+
+export async function queueTimings(messageId: string): Promise<ActionResult> {
+  try {
+    await requireUser([...REVIEWERS]);
+    if (!geminiConfigured()) return { error: "Timings need Gemini. Add GEMINI_API_KEY in Vercel first." };
+    const queued = await enqueueTimings([messageId]);
+    if (!queued) return { error: "This message has no audio to time, or it's already being worked on." };
+    after(kickRunner);
+    revalidatePath(`/messages/${messageId}`);
+    return { ok: "Adding timings. This takes a few minutes; you can keep editing meanwhile." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function queueTimingsBatch(): Promise<ActionResult> {
+  try {
+    await requireUser([...REVIEWERS]);
+    if (!geminiConfigured()) return { error: "Timings need Gemini. Add GEMINI_API_KEY in Vercel first." };
+    const s = await getSettings(["batchSize"]);
+    const queued = await enqueueTimings(null, Number(s.batchSize) || 10);
+    if (!queued) return { ok: "Every transcript with audio already has timings." };
+    after(kickRunner);
+    revalidatePath("/settings");
+    return { ok: `Adding timings to ${queued} transcript${queued === 1 ? "" : "s"}.` };
   } catch (err) {
     return fail(err);
   }

@@ -11,8 +11,8 @@ import { ImportForm, TranscriptionSettings, InviteForm, InviteRow, MemberRow } f
 import { syncSheetNow, runQueueNow, backupAllNow, disconnectGoogleDrive } from "@/app/actions/admin";
 import { driveClientConfigured, redirectUri } from "@/lib/drive";
 import { prisma as db } from "@/lib/prisma";
-import { checkPodbeanNow, runNextBatch } from "@/app/actions/messages";
-import { HAS_AUDIO_SOURCE } from "@/lib/jobs";
+import { checkPodbeanNow, runNextBatch, queueTimingsBatch } from "@/app/actions/messages";
+import { HAS_AUDIO_SOURCE, NEEDS_TIMINGS } from "@/lib/jobs";
 
 export const metadata = { title: "Settings" };
 // "Back up all now" can run for a few minutes.
@@ -38,9 +38,10 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     db.message.count({ where: { ...untranscribed, ...HAS_AUDIO_SOURCE } }),
     db.message.count({ where: { ...untranscribed, NOT: HAS_AUDIO_SOURCE } }),
   ]);
-  const [backedUp, transcripts] = await Promise.all([
+  const [backedUp, transcripts, untimed] = await Promise.all([
     db.transcript.count({ where: { driveUrl: { not: null } } }),
     db.transcript.count(),
+    db.message.count({ where: NEEDS_TIMINGS }),
   ]);
   const driveOn = driveClientConfigured() && !!s.driveRefreshToken;
   const DRIVE_RESULT: Record<string, string> = {
@@ -90,6 +91,22 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           Queue adds the next untranscribed messages ({s.batchOrder === "oldest" ? "oldest" : "newest"} first). Resume restarts work on messages already
           in the queue if it seems stuck. It doesn’t add new ones.
         </p>
+        {untimed > 0 && (
+          <div className="flex flex-col gap-2 rounded-xl bg-banner p-4">
+            <p className="text-sm">
+              <span className="font-medium">{untimed.toLocaleString()} transcript{untimed === 1 ? "" : "s"} can’t follow the audio yet.</span>{" "}
+              <span className="text-muted">
+                They were made before timings existed. Adding timings lets the text highlight each sentence as it’s played. New transcripts get them
+                automatically.
+              </span>
+            </p>
+            <div>
+              <ActionButton action={queueTimingsBatch} pendingLabel="Queueing…">
+                Add timings to the next {Math.min(Number(s.batchSize) || 10, untimed)}
+              </ActionButton>
+            </div>
+          </div>
+        )}
         <TranscriptionSettings
           values={s}
           providers={PROVIDERS.map((p) => ({ key: p, label: PROVIDER_LABELS[p], ready: providerConfigured(p) }))}

@@ -133,6 +133,10 @@ model Transcript {
   updatedAt  DateTime            @updatedAt
   versions   TranscriptVersion[]
 
+  // When each sentence is spoken, from Gemini: [{ "start": seconds, "text": "..." }]. Matched
+  // to the current text word by word, so it still works after edits.
+  timeline Json?
+
   // The Google Doc backup. Out of date whenever updatedAt is later than driveSyncedAt.
   driveFileId   String?
   driveUrl      String?
@@ -166,9 +170,12 @@ model TranscriptionJob {
   status     JobStatus @default(PENDING)
   step       String    @default("PREPARE")
   provider   String
-  // [{ path, durationSec, text? }] once the audio is cut.
+  // "TRANSCRIBE" (text, then timings) or "TIMINGS" (timings only, for an existing transcript).
+  kind       String    @default("TRANSCRIBE")
+  // [{ path, durationSec, text?, segments? }] once the audio is cut.
   parts      Json?
   nextPart   Int       @default(0)
+  nextTime   Int       @default(0)
   attempts   Int       @default(0)
   error      String?
   lockedAt   DateTime?

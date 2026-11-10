@@ -8,7 +8,8 @@ import { missingDetails, titleKnown } from "@/lib/needs";
 import { PROVIDER_LABELS, isProvider } from "@/lib/transcribe";
 import { StatusChip, Chip } from "@/components/ui";
 import DetailsForm from "@/components/DetailsForm";
-import TranscriptEditor from "@/components/TranscriptEditor";
+import TranscriptPanel from "@/components/TranscriptPanel";
+import { readTimeline } from "@/lib/align";
 import ActionButton from "@/components/ActionButton";
 import { queueTranscription, cancelTranscription } from "@/app/actions/messages";
 import { jobLooksStalled } from "@/lib/jobs";
@@ -27,7 +28,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
     where: { id },
     include: {
       transcript: { include: { reviewer: { select: { name: true } }, _count: { select: { versions: true } } } },
-      jobs: { orderBy: { createdAt: "desc" }, take: 1 },
+      jobs: { orderBy: { createdAt: "desc" }, take: 6 },
       manuals: true,
       assignee: { select: { name: true } },
       edits: { orderBy: { createdAt: "desc" }, take: 5, include: { user: { select: { name: true } } } },
@@ -37,8 +38,12 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
   const speakers = reviewer
     ? (await prisma.message.groupBy({ by: ["speaker"], orderBy: { _count: { speaker: "desc" } }, take: 30 })).map((s) => s.speaker).filter((s): s is string => !!s)
     : [];
-  const job = m.jobs[0];
-  const activeJob = job && (job.status === "PENDING" || job.status === "RUNNING") ? job : null;
+  const isActive = (j: { status: string }) => j.status === "PENDING" || j.status === "RUNNING";
+  // Transcription and timings are separate jobs: only transcription replaces the transcript box.
+  const job = m.jobs.find((j) => j.kind !== "TIMINGS");
+  const activeJob = job && isActive(job) ? job : null;
+  const timingsJob = m.jobs.find((j) => j.kind === "TIMINGS");
+  const timeline = readTimeline(m.transcript?.timeline);
   const parts = (activeJob?.parts as { text?: string }[] | null) ?? [];
   const meta = [formatDate(m.date), m.speaker, m.series, m.location].filter(Boolean);
 
@@ -104,6 +109,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                   <span className="font-medium">
                     {activeJob.step === "PREPARE" && (activeJob.status === "PENDING" ? "Waiting in the queue" : "Downloading and preparing the audio")}
                     {activeJob.step === "PART" && `Transcribing part ${Math.min(activeJob.nextPart + 1, parts.length)} of ${parts.length}`}
+                    {activeJob.step === "TIME" && `Matching the text to the audio, part ${Math.min(activeJob.nextTime + 1, parts.length)} of ${parts.length}`}
                     {activeJob.step === "FINISH" && "Putting the transcript together"}
                   </span>
                   <span className="text-sm text-muted">
@@ -121,10 +127,14 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                 )}
               </div>
             ) : m.transcript ? (
-              <TranscriptEditor
+              <TranscriptPanel
                 key={m.transcript.updatedAt.toISOString()}
                 messageId={m.id}
                 text={m.transcript.text}
+                audioUrl={m.audioUrl}
+                timeline={timeline}
+                timingsRunning={!!timingsJob && isActive(timingsJob)}
+                timingsFailed={!timeline && timingsJob?.status === "FAILED" ? timingsJob.error : null}
                 approved={m.status === "APPROVED"}
                 canEdit={reviewer}
                 needsDetails={m.needsDetails}
@@ -159,7 +169,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
         </div>
 
         <aside className="flex flex-col gap-6">
-          {m.audioUrl && (
+          {m.audioUrl && (!m.transcript || activeJob) && (
             <section className="card flex flex-col gap-3 p-6 xl:sticky xl:top-6">
               <h2 className="font-display text-lg font-semibold">Listen</h2>
               <audio controls preload="none" src={m.audioUrl} className="w-full" />

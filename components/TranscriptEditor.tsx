@@ -6,6 +6,9 @@ import { saveTranscript, approveTranscript, reopenTranscript, type ActionResult 
 type Props = {
   messageId: string;
   text: string;
+  // The text being edited, held by the panel so the listening view follows unsaved edits.
+  value: string;
+  onChange: (value: string) => void;
   approved: boolean;
   canEdit: boolean;
   needsDetails: boolean;
@@ -13,8 +16,7 @@ type Props = {
 
 // The reviewer's view: the transcript as one editable text, with Save (keep working) and
 // Approve (done). Every save is kept as a version, so nothing typed is ever lost.
-export default function TranscriptEditor({ messageId, text, approved, canEdit, needsDetails }: Props) {
-  const [value, setValue] = useState(text);
+export default function TranscriptEditor({ messageId, text, value, onChange: setValue, approved, canEdit, needsDetails }: Props) {
   const [result, setResult] = useState<ActionResult>(null);
   const [pending, start] = useTransition();
   const dirty = value !== text;
@@ -56,9 +58,9 @@ export default function TranscriptEditor({ messageId, text, approved, canEdit, n
 
   return (
     <div className="flex flex-col gap-4">
-      <label htmlFor="transcript" className="sr-only">Transcript</label>
+      <label htmlFor="transcript-text" className="sr-only">Transcript</label>
       <textarea
-        id="transcript"
+        id="transcript-text"
         ref={area}
         value={value}
         onChange={(e) => setValue(e.target.value)}

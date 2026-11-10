@@ -151,3 +151,53 @@ test("speaker groups from the real dropdown", async () => {
   assert.ok(!set("Pastor Adesola Zakariya").has("Pastor Akorede Zakariya"));
   console.log(groups.map((g) => `${g.suggested} <= ${g.names.map((n) => n.name).join(" | ")}`).join("\n"));
 });
+
+test("sentence timings survive edits", async () => {
+  const { alignTranscript, splitSentences, currentIndex } = await import("../lib/align");
+  assert.deepEqual(splitSentences("Turn to John 3:16. For God so loved the world! Amen?"), ["Turn to John 3:16.", "For God so loved the world!", "Amen?"]);
+  const timeline = [
+    { start: 0, text: "Good morning church." },
+    { start: 3, text: "Turn with me to Romans chapter eight verse fourteen." },
+    { start: 9, text: "For as many as are led by the Spirit of God, they are the sons of God." },
+    { start: 16, text: "Life in the Spirit is not an event, it is a walk." },
+    { start: 21, text: "Say amen somebody." },
+  ];
+  // A reviewer fixed the reference, merged two sentences into one paragraph and reworded one.
+  const edited = "Good morning, church. Turn with me to Romans 8:14.\n\nFor as many as are led by the Spirit of God, they are the sons of God. Life in the Spirit is not one event; it is a daily walk.\n\nSay amen, somebody!";
+  const paras = alignTranscript(edited, timeline);
+  const flat = paras.flat();
+  assert.equal(paras.length, 3);
+  assert.equal(flat.length, 5);
+  const starts = flat.map((s) => s.start!);
+  assert.equal(starts[0], 0);
+  assert.ok(Math.abs(starts[1] - 3) < 0.5, `Turn with me ~3s, got ${starts[1]}`);
+  assert.ok(Math.abs(starts[2] - 9) < 0.5, `For as many ~9s, got ${starts[2]}`);
+  assert.ok(Math.abs(starts[3] - 16) < 0.5, `Life in the Spirit ~16s, got ${starts[3]}`);
+  assert.ok(Math.abs(starts[4] - 21) < 0.5, `Say amen ~21s, got ${starts[4]}`);
+  assert.equal(currentIndex(starts, 12), 2);
+  assert.equal(currentIndex(starts, 0), 0);
+  // A sentence rewritten completely still gets a time in order.
+  const rewritten = alignTranscript("Good morning church. Something totally new here. For as many as are led by the Spirit of God.", timeline).flat();
+  assert.ok(rewritten[1].start! > rewritten[0].start! && rewritten[1].start! < rewritten[2].start!);
+  // No timeline: text only.
+  assert.equal(alignTranscript("One. Two three four five.", null).flat()[0].start, null);
+});
+
+test("Gemini timings are read safely", async () => {
+  const { parseClock, cleanTimeline } = await import("../lib/align");
+  assert.equal(parseClock("01:05"), 65);
+  assert.equal(parseClock("1:02:03"), 3723);
+  assert.equal(parseClock("12.5"), 12.5);
+  assert.equal(parseClock(7), 7);
+  assert.equal(parseClock("soon"), null);
+  const t = cleanTimeline(
+    { segments: [{ start: "00:00", text: "Hallelujah." }, { start: "00:04", text: " " }, { start: "00:09", text: "Open your Bibles." }, { start: "00:07", text: "Romans eight." }, { start: "15:00", text: "Too late." }, { start: "x", text: "Bad." }] },
+    600
+  );
+  assert.deepEqual(t, [
+    { start: 0, text: "Hallelujah." },
+    { start: 9, text: "Open your Bibles." },
+    { start: 9, text: "Romans eight." },
+  ]);
+  assert.deepEqual(cleanTimeline({ nope: 1 }), []);
+});

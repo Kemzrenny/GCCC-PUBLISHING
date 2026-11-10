@@ -87,7 +87,16 @@ export default async function ReviewPage() {
                     <div className="flex justify-between gap-3">
                       <Link className="truncate hover:underline" href={`/messages/${j.message.id}`}>{j.message.title}</Link>
                       <span className="shrink-0 text-muted">
-                        {j.status === "PENDING" ? "Queued" : j.step === "PART" ? `Part ${Math.min(j.nextPart + 1, parts)} of ${parts}` : j.step === "FINISH" ? "Finishing" : "Preparing"}
+                        {j.kind === "TIMINGS" ? "Timings · " : ""}
+                        {j.status === "PENDING"
+                          ? "Queued"
+                          : j.step === "PART"
+                            ? `Part ${Math.min(j.nextPart + 1, parts)} of ${parts}`
+                            : j.step === "TIME"
+                              ? `Timing part ${Math.min(j.nextTime + 1, parts)} of ${parts}`
+                              : j.step === "FINISH"
+                                ? "Finishing"
+                                : "Preparing"}
                       </span>
                     </div>
                     {j.error ? (
