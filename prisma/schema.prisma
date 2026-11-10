@@ -87,6 +87,8 @@ model Message {
   dateFromUpload Boolean @default(false)
   // When the episode was published on Podbean (from the feed or its page).
   podbeanPublishedAt DateTime?
+  // When someone confirmed or corrected an upload-day date on Check dates.
+  dateCheckedAt  DateTime?
   // A title the AI suggested from the transcript, offered when Podbean's was unusable.
   suggestedTitle String?
 

@@ -155,7 +155,7 @@ export async function saveDetails(messageId: string, _: ActionResult, form: Form
     await prisma.$transaction([
       prisma.message.update({
         where: { id: messageId },
-        data: { ...next, needsDetails: false, detailsLocked: true, dateFromUpload: false, suggestedTitle: null },
+        data: { ...next, needsDetails: false, detailsLocked: true, dateFromUpload: false, dateCheckedAt: before.dateFromUpload ? new Date() : before.dateCheckedAt, suggestedTitle: null },
       }),
       ...(Object.keys(changes).length ? [prisma.messageEdit.create({ data: { messageId, userId: user.id, changes } })] : []),
     ]);

@@ -35,11 +35,11 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
           </div>
           <div className="flex min-w-64 flex-1 flex-col gap-1">
             <span className="font-display text-xl font-semibold">
-              {stats.needsDetails} message{stats.needsDetails === 1 ? " needs" : "s need"} details confirmed
+              {stats.needsDetails.toLocaleString()} date{stats.needsDetails === 1 ? "" : "s"} to check
             </span>
-            <span className="text-[15px] text-muted">A title or date is missing or looks wrong. Confirm them to keep the archive clean.</span>
+            <span className="text-[15px] text-muted">Dated by the day they went up on Podbean. Confirm or correct them to keep the archive accurate.</span>
           </div>
-          <Link href="/needs-details" className="btn-quiet h-12 px-5">Review details</Link>
+          <Link href="/check-dates" className="btn-quiet h-12 px-5">Check dates</Link>
         </section>
       )}
 

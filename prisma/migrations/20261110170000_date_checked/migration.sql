@@ -1,0 +1,1 @@
+ALTER TABLE "Message" ADD COLUMN "dateCheckedAt" TIMESTAMP(3);

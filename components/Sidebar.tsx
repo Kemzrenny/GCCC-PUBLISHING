@@ -7,7 +7,7 @@ import { useState, useTransition } from "react";
 import {
   LayoutGrid,
   ListChecks,
-  CircleAlert,
+  CalendarCheck,
   CalendarDays,
   BookOpen,
   FileText,
@@ -95,7 +95,7 @@ export default function Sidebar({ user, counts, theme }: Props) {
         <span className="px-1 pb-2 text-[11px] tracking-[0.06em] text-muted uppercase">Library</span>
         <NavLink href="/library" icon={LayoutGrid}>Message library</NavLink>
         <NavLink href="/review" icon={ListChecks} count={counts.review}>Review queue</NavLink>
-        <NavLink href="/needs-details" icon={CircleAlert} count={counts.needs}>Needs details</NavLink>
+        {reviewer && counts.needs > 0 && <NavLink href="/check-dates" icon={CalendarCheck} count={counts.needs}>Check dates</NavLink>}
       </div>
 
       <div className={`${fold} flex-col gap-0.5`}>
