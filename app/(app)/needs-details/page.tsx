@@ -7,6 +7,8 @@ import { PageHeading, Empty } from "@/components/ui";
 import DetailsForm from "@/components/DetailsForm";
 import ActionButton from "@/components/ActionButton";
 import { checkPodbeanNow } from "@/app/actions/messages";
+import { getSetting } from "@/lib/settings";
+import type { PodbeanResult } from "@/lib/podbean";
 
 export const metadata = { title: "Needs details" };
 
@@ -19,6 +21,11 @@ export default async function NeedsDetailsPage() {
     prisma.message.count({ where: { needsDetails: true, podbeanTitle: null, OR: [{ sourceUrl: null }, { NOT: { sourceUrl: { contains: "podbean.com" } } }] } }),
     prisma.message.groupBy({ by: ["speaker"], orderBy: { _count: { speaker: "desc" } }, take: 30 }),
   ]);
+  let last: PodbeanResult | null = null;
+  try {
+    last = JSON.parse((await getSetting("podbeanLastResult")) || "null");
+  } catch {}
+  const report = last?.report;
   const speakerNames = speakers.map((s) => s.speaker).filter((s): s is string => !!s);
 
   return (
@@ -40,10 +47,11 @@ export default async function NeedsDetailsPage() {
             </span>
           </p>
           <div className="shrink-0">
-            <ActionButton action={checkPodbeanNow} pendingLabel="Checking…">Fill from Podbean</ActionButton>
+            <ActionButton action={checkPodbeanNow} pendingLabel="Checking… (up to a minute)">Fill from Podbean</ActionButton>
           </div>
         </section>
       )}
+      {total > 0 && report && <WhyWaiting report={report} feedEpisodes={last?.checked ?? 0} />}
       {messages.length === 0 ? (
         <section className="card">
           <Empty title="All caught up">Every message in the library has a title and date.</Empty>
@@ -79,5 +87,47 @@ export default async function NeedsDetailsPage() {
         ))
       )}
     </>
+  );
+}
+
+// What the last Podbean check found about the messages still waiting, so it's clear what
+// needs a person and what the portal is still working through.
+function WhyWaiting({ report, feedEpisodes }: { report: NonNullable<PodbeanResult["report"]>; feedEpisodes: number }) {
+  const rows: { n: number; label: string; detail: string; samples?: string[] }[] = [
+    {
+      n: report.toLookUp,
+      label: "Not looked up yet",
+      detail: `Podbean’s feed only lists its latest ${feedEpisodes} episodes, so older ones are read from their own Podbean pages, a batch at a time. Click Fill from Podbean again to carry on. Any that stay here after a few tries have a Podbean link that no longer opens.`,
+    },
+    { n: report.noTitle, label: "No usable title", detail: "The Podbean title doesn’t say what the message is.", samples: report.samples.noTitle },
+    {
+      n: report.catchUp,
+      label: "Uploaded in a batch",
+      detail: "Several episodes went up on the same day, so that day isn’t when they were preached, and the title has no date.",
+      samples: report.samples.catchUp,
+    },
+    { n: report.noDate, label: "No date anywhere", detail: "No date in the title or description, and no upload date.", samples: report.samples.noDate },
+    { n: report.notOnPodbean, label: "No Podbean link", detail: "From the old sheet without a link, so Podbean can’t help." },
+  ].filter((r) => r.n > 0);
+  if (!rows.length) return null;
+  return (
+    <section className="card flex flex-col gap-3 p-6">
+      <h2 className="font-display text-xl font-semibold">Why they’re still waiting</h2>
+      <p className="text-sm text-muted">
+        From the last check{report.pagesRead || report.pagesFailed ? ` (read ${report.pagesRead} episode pages${report.pagesFailed ? `, ${report.pagesFailed} couldn’t be opened` : ""})` : ""}.
+      </p>
+      <ul className="flex flex-col divide-y divide-line">
+        {rows.map((r) => (
+          <li key={r.label} className="flex flex-col gap-1 py-3 sm:flex-row sm:gap-4">
+            <span className="w-14 shrink-0 font-display text-2xl font-semibold">{r.n.toLocaleString()}</span>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-medium">{r.label}</span>
+              <span className="text-muted">{r.detail}</span>
+              {!!r.samples?.length && <span className="text-muted">For example: {r.samples.map((s) => `“${s}”`).join(", ")}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

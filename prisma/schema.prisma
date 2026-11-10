@@ -85,6 +85,8 @@ model Message {
   detailsLocked  Boolean @default(false)
   // The date is the day the episode was uploaded to Podbean, not confirmed by anyone.
   dateFromUpload Boolean @default(false)
+  // When the episode was published on Podbean (from the feed or its page).
+  podbeanPublishedAt DateTime?
   // A title the AI suggested from the transcript, offered when Podbean's was unusable.
   suggestedTitle String?
 

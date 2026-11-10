@@ -213,6 +213,29 @@ export function audioFromEpisodePage(html: string): string | null {
   return any ? clean(any[0]) : null;
 }
 
+// The title, description and publish time on a Podbean episode page, from its structured
+// data or, failing that, its Open Graph tags. Old episodes drop out of the feed, but their
+// pages keep these.
+export function detailsFromEpisodePage(html: string): { title: string | null; description: string; published: Date | null } {
+  const clean = (s: string) => decodeEntities(s.replace(/\\\//g, "/").replace(/\\u([0-9a-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\"/g, '"'));
+  const all = (html.match(/<script[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) ?? []).join("\n");
+  // Read the episode's own fields, not the podcast's (which also has a "name").
+  const at = all.search(/"@type"\s*:\s*"PodcastEpisode"/);
+  const blocks = at >= 0 ? all.slice(Math.max(0, all.lastIndexOf("{", at))) : all;
+  const ld = (key: string) => new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(blocks)?.[1];
+  const meta = (prop: string) =>
+    (new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']*)`, "i").exec(html) ??
+      new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${prop}["']`, "i").exec(html))?.[1];
+  const rawTitle = ld("name") ?? meta("og:title") ?? null;
+  const rawDate = ld("datePublished") ?? ld("uploadDate") ?? meta("article:published_time") ?? null;
+  const published = rawDate ? new Date(clean(rawDate)) : null;
+  return {
+    title: rawTitle ? clean(rawTitle).replace(/\s*\|\s*Podbean\s*$/i, "").trim() || null : null,
+    description: clean(ld("description") ?? meta("og:description") ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+    published: published && !Number.isNaN(published.getTime()) ? published : null,
+  };
+}
+
 // ---- Dates from Podbean ----
 
 // Episodes uploaded on the same day as many others were a catch-up upload, so their

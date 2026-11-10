@@ -107,11 +107,11 @@ export async function checkPodbeanNow(): Promise<ActionResult> {
     const r = await checkPodbean();
     if (r.queued) after(kickRunner);
     revalidatePath("/", "layout");
-    const parts = [`${r.added} new message${r.added === 1 ? "" : "s"}`];
-    if (r.resolved) parts.push(`${r.resolved} waiting message${r.resolved === 1 ? "" : "s"} filled in`);
-    if (r.needsDetails) parts.push(`${r.needsDetails} need details`);
+    const parts = [`${r.added} new message${r.added === 1 ? "" : "s"}`, `${r.resolved} waiting message${r.resolved === 1 ? "" : "s"} filled in`];
     if (r.queued) parts.push(`${r.queued} queued for transcription`);
-    return { ok: `Checked Podbean: ${parts.join(", ")}.` };
+    const left = r.report?.waiting ?? 0;
+    const more = r.report?.toLookUp ? ` ${r.report.toLookUp} episode pages still to read: check again to carry on.` : "";
+    return { ok: `Checked Podbean: ${parts.join(", ")}. ${left} still waiting.${more}` };
   } catch (err) {
     return fail(err);
   }

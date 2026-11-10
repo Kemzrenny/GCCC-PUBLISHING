@@ -8,6 +8,9 @@ import { nudgeStalledQueue } from "@/lib/jobs";
 import Sidebar from "@/components/Sidebar";
 import ActionButton from "@/components/ActionButton";
 import Breadcrumb from "@/components/Breadcrumb";
+
+// "Check Podbean" (in the top bar on every page) reads old episode pages, which takes a while.
+export const maxDuration = 300;
 import { checkPodbeanNow } from "@/app/actions/messages";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {

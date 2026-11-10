@@ -240,3 +240,17 @@ test("Podbean links match whichever address they were copied from", async () => 
   assert.equal(episodeSlug("podbean.com/e/faith-that-works?utm=x"), "faith-that-works");
   assert.equal(episodeSlug("https://www.podbean.com/eu/pb-abc"), null);
 });
+
+test("an old episode's title and date are read from its Podbean page", async () => {
+  const { detailsFromEpisodePage } = await import("../lib/podbean-parse");
+  const html = `<html><head><meta property="og:title" content="Faith That Works | GCCC Podcasts" />
+  <script type="application/ld+json">{"@context":"https://schema.org/","@type":"PodcastEpisode","url":"https:\\/\\/gcccpodcasts.podbean.com\\/e\\/faith-that-works\\/","name":"Faith That Works Pst Kunle Zakariya","datePublished":"2019-07-23","description":"Preached at GCCC Ojodu on 21st July 2019 \\u2013 part 2","associatedMedia":{"@type":"MediaObject","contentUrl":"https:\\/\\/mcdn.podbean.com\\/mf\\/web\\/abc\\/faith.mp3"},"partOfSeries":{"@type":"PodcastSeries","name":"GCCC Podcasts","url":"https:\\/\\/gcccpodcasts.podbean.com"}}</script></head></html>`;
+  const d = detailsFromEpisodePage(html);
+  assert.equal(d.title, "Faith That Works Pst Kunle Zakariya");
+  assert.equal(d.published?.toISOString().slice(0, 10), "2019-07-23");
+  assert.match(d.description, /21st July 2019 – part 2/);
+  const og = detailsFromEpisodePage(`<meta content="Grace | Podbean" property="og:title"><meta property="article:published_time" content="2020-01-05T10:00:00Z">`);
+  assert.equal(og.title, "Grace");
+  assert.equal(og.published?.toISOString().slice(0, 10), "2020-01-05");
+  assert.equal(detailsFromEpisodePage("<html></html>").title, null);
+});
