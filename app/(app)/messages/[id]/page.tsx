@@ -13,6 +13,7 @@ import DetailsForm from "@/components/DetailsForm";
 import { confirmDates } from "@/app/actions/dates";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import { readTimeline } from "@/lib/align";
+import AutoRefresh from "@/components/AutoRefresh";
 import ActionButton from "@/components/ActionButton";
 import { queueTranscription, cancelTranscription } from "@/app/actions/messages";
 import { jobLooksStalled } from "@/lib/jobs";
@@ -135,10 +136,11 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                   <span className="text-sm text-muted">
                     {activeJob.error
                       ? `Retrying (${activeJob.attempts} of 3) after a problem: ${activeJob.error}`
-                      : jobLooksStalled(activeJob)
-                        ? "Paused. It restarts on its own now; refresh in a minute."
-                        : "This page shows the result once it's ready. Refresh to check."}
+                      : activeJob.status === "RUNNING" && jobLooksStalled(activeJob)
+                        ? "Paused. It restarts on its own now."
+                        : "The transcript appears here once it's ready."}
                   </span>
+                  <AutoRefresh />
                 </div>
                 {reviewer && (
                   <ActionButton action={cancelTranscription.bind(null, activeJob.id)} confirm="Stop this transcription?">

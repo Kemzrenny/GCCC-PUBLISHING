@@ -6,7 +6,7 @@ transcript, and everything made from it.
 Phase 1 (this release):
 
 - **Message library**: every message, filterable by transcript status, speaker and year, with search across titles, series, summaries, themes and scriptures.
-- **Podbean import**: the feed is checked every two hours (6am to 10pm Lagos time) and on demand. New episodes are added and, by default, queued for transcription. Episodes whose titles have no usable title or date go to **Needs details**.
+- **Podbean import**: the feed is checked every hour and on demand. New episodes are added and, by default, queued for transcription. Episodes whose titles have no usable title or date go to **Needs details**.
 - **Transcription**: audio is cut into ~10-minute parts and each part is transcribed by the service chosen in Settings: Google Gemini, OpenAI or ElevenLabs Scribe. Gemini then drafts a summary, themes, scriptures and tract/book potential.
 - **Review**: a reviewer corrects the draft against the audio and approves it. Every save is kept as a version.
 - **Sheet import**: a one-time (repeatable) import of the old Publishing Central Content System sheet, matched by its ID and Podbean link.
@@ -49,5 +49,5 @@ A sermon is too long to transcribe within one server request, so each job moves 
 at a time (`lib/jobs.ts`): **PREPARE** downloads the audio and cuts it into parts kept in
 Gemini's file storage for 48 hours (or cut again from the recording later), **PART** transcribes the next part, **FINISH** joins the parts and drafts the
 summary. `/api/jobs/run` works through as many steps as fit in four minutes, then calls
-itself again if work is left. The scheduled round (`/api/cron/work`) also restarts it. A
+itself again if work is left. The hourly scheduled round (`/api/cron/work`) also restarts it, and so does any page load (the review and message pages reload on their own every 30 seconds while work is running). A
 step that fails is retried twice before the job is marked failed with the reason.

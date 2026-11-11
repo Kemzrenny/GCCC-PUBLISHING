@@ -156,7 +156,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             Last checked: {when(s.podbeanLastCheck)}
             {podbean.checked !== undefined && <span className="text-muted"> · {podbean.checked} episodes in the feed, {podbean.added} new</span>}
           </p>
-          <p className="text-sm text-muted">Checked automatically every two hours from 6am to 10pm.</p>
+          <p className="text-sm text-muted">Checked automatically every hour.</p>
           <div><ActionButton action={checkPodbeanNow} pendingLabel="Checking…">Check now</ActionButton></div>
         </section>
 

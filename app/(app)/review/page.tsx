@@ -2,6 +2,7 @@ import Link from "next/link";
 import { currentUser, canReview } from "@/lib/auth";
 import ReviewList from "@/components/ReviewList";
 import ActionButton from "@/components/ActionButton";
+import AutoRefresh from "@/components/AutoRefresh";
 import { retryFailed } from "@/app/actions/messages";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDuration } from "@/lib/dates";
@@ -73,14 +74,18 @@ export default async function ReviewPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card flex flex-col gap-3 p-6">
-          <h2 className="font-display text-xl font-semibold">Being transcribed</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-xl font-semibold">Being transcribed</h2>
+            {working.length > 0 && <AutoRefresh />}
+          </div>
           {working.length === 0 ? (
             <p className="text-sm text-muted">Nothing in the queue. Use Run next batch to start on the backlog.</p>
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
               {working.map((j) => {
                 const parts = (j.parts as unknown[] | null)?.length ?? 0;
-                const stalled = jobLooksStalled(j);
+                // Only a started job can be paused; queued ones are waiting their turn.
+                const stalled = j.status === "RUNNING" && jobLooksStalled(j);
                 return (
                   <li key={j.id} className="flex flex-col gap-0.5">
                     <div className="flex justify-between gap-3">
@@ -101,7 +106,7 @@ export default async function ReviewPage() {
                     {j.error ? (
                       <span className="text-xs text-alert">Retrying ({j.attempts} of 3) after: {j.error.slice(0, 160)}</span>
                     ) : (
-                      stalled && <span className="text-xs text-muted">Paused. Restarting now; refresh in a minute.</span>
+                      stalled && <span className="text-xs text-muted">Paused. Restarting now; this list updates on its own.</span>
                     )}
                   </li>
                 );
