@@ -1,7 +1,7 @@
 import "server-only";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
+import { access, chmod, constants, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, statfs, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -9,10 +9,15 @@ export type SplitPart = { buffer: Buffer; durationSec: number; ext: string; mime
 
 let binary: Promise<string> | null = null;
 
-// The traced binary may not keep its executable bit on the host, so run a copy from /tmp.
+// The traced binary may not keep its executable bit on the host; only then is a copy made in
+// /tmp (it's 80 MB of the server's 512 MB of temporary space).
 function ffmpegBinary(): Promise<string> {
   binary ??= (async () => {
     if (!ffmpegPath) throw new Error("ffmpeg is not available");
+    try {
+      await access(ffmpegPath, constants.X_OK);
+      return ffmpegPath;
+    } catch {}
     const target = path.join(tmpdir(), "gccc-ffmpeg");
     try {
       await stat(target);
@@ -30,11 +35,16 @@ function ffmpegBinary(): Promise<string> {
   return binary;
 }
 
-function run(bin: string, args: string[]): Promise<{ code: number; stderr: string }> {
+function run(bin: string, args: string[], stdin?: Buffer): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(bin, args, { stdio: [stdin ? "pipe" : "ignore", "ignore", "pipe"] });
+    if (stdin && child.stdin) {
+      // ffmpeg may stop reading early (bad file); that's reported by its exit code instead.
+      child.stdin.on("error", () => {});
+      child.stdin.end(stdin);
+    }
     let stderr = "";
-    child.stderr.on("data", (d: Buffer) => {
+    child.stderr?.on("data", (d: Buffer) => {
       // Only the tail matters (errors and the duration line); keep memory small.
       stderr = (stderr + d.toString()).slice(-20_000);
     });
@@ -68,30 +78,70 @@ const COPY_FORMATS: Record<string, { ext: string; mime: string }> = {
 const REENCODE = { ext: "mp3", mime: "audio/mpeg" };
 const GEMINI_NATIVE = new Set(["mp3", "mpeg", "mpga", "wav", "webm", "ogg", "oga", "opus", "flac", "aac"]);
 
-async function cut(bin: string, dir: string, input: string, segmentSeconds: number, format: { ext: string }, reencode: boolean) {
+async function cut(bin: string, dir: string, input: string | Buffer, segmentSeconds: number, format: { ext: string }, reencode: boolean) {
+  const piped = typeof input !== "string";
   const args = [
-    "-hide_banner", "-y", "-i", input,
+    "-hide_banner", "-y", ...(piped ? ["-f", "mp3", "-i", "pipe:0"] : ["-i", input]),
     "-vn", "-map", "0:a:0",
     ...(reencode ? ["-c:a", "libmp3lame", "-b:a", "64k", "-ac", "1"] : ["-c", "copy"]),
     "-f", "segment", "-segment_time", String(segmentSeconds), "-reset_timestamps", "1",
     path.join(dir, `part%03d.${format.ext}`),
   ];
-  const { code } = await run(bin, args);
+  const { code, stderr } = await run(bin, args, piped ? input : undefined);
+  if (/No space left on device/i.test(stderr)) throw new Error(NO_SPACE);
   const files = (await readdir(dir)).filter((f) => f.startsWith("part")).sort();
   return { ok: code === 0 && files.length > 0, files };
 }
 
+const NO_SPACE = "The server ran out of temporary space while splitting the audio. It will try again.";
+const MP3 = new Set(["mp3", "mpeg", "mpga"]);
+
+// One split at a time per server: two long recordings at once can fill the temporary space.
+let queue: Promise<unknown> = Promise.resolve();
+
+// A run that was cut off (a timed-out step) never reaches its clean-up, so whatever split
+// folders are left when a new split starts are leftovers.
+async function clearLeftovers() {
+  const dir = tmpdir();
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    if (name.startsWith("gccc-split-")) await rm(path.join(dir, name), { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function freeBytes(): Promise<number> {
+  try {
+    const s = await statfs(tmpdir());
+    return s.bavail * s.bsize;
+  } catch {
+    return Infinity;
+  }
+}
+
 // Cuts a recording into parts of about `segmentSeconds`, so each can be transcribed quickly
 // and accurately. Returns null when the audio is short enough to use as it is.
-export async function splitAudio(
-  input: Buffer,
-  extension: string,
-  segmentSeconds: number
-): Promise<{ total: number; parts: SplitPart[] | null }> {
+export function splitAudio(input: Buffer, extension: string, segmentSeconds: number): Promise<{ total: number; parts: SplitPart[] | null }> {
+  const next = queue.then(() => splitOne(input, extension, segmentSeconds));
+  queue = next.catch(() => {});
+  return next;
+}
+
+async function splitOne(input: Buffer, extension: string, segmentSeconds: number): Promise<{ total: number; parts: SplitPart[] | null }> {
   const bin = await ffmpegBinary();
+  await clearLeftovers();
+  const ext = extension.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+  // MP3s are streamed into ffmpeg, so only the parts touch the disk; other formats need the
+  // whole file on disk as well.
+  const needed = input.length * (MP3.has(ext) ? 1.1 : 2.2) + 20 * 1024 * 1024;
+  const free = await freeBytes();
+  if (free < needed) {
+    throw new Error(`The server doesn't have enough temporary space for this recording (needs ${Math.round(needed / 1048576)} MB, has ${Math.round(free / 1048576)} MB). It will try again.`);
+  }
   const dir = await mkdtemp(path.join(tmpdir(), "gccc-split-"));
   try {
-    const ext = extension.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+    if (MP3.has(ext)) {
+      const streamed = await splitMp3(bin, dir, input, segmentSeconds);
+      if (streamed) return streamed;
+    }
     const inputFile = path.join(dir, `input.${ext}`);
     await writeFile(inputFile, input);
     const total = await durationOf(bin, inputFile);
@@ -130,4 +180,29 @@ export async function splitAudio(
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+// MP3: cut straight from memory. Returns null if ffmpeg can't, so the caller falls back to
+// the file-based way.
+async function splitMp3(bin: string, dir: string, input: Buffer, segmentSeconds: number): Promise<{ total: number; parts: SplitPart[] | null } | null> {
+  const outDir = path.join(dir, "out");
+  await mkdir(outDir);
+  const result = await cut(bin, outDir, input, segmentSeconds, COPY_FORMATS.mp3, false);
+  if (!result.ok) {
+    await rm(outDir, { recursive: true, force: true });
+    return null;
+  }
+  const durations: number[] = [];
+  for (const f of result.files) durations.push(await durationOf(bin, path.join(outDir, f)));
+  const total = durations.reduce((a, b) => a + b, 0);
+  // Short enough to send as it is.
+  if (result.files.length === 1 && total <= segmentSeconds * 1.3) return { total, parts: null };
+  const parts: SplitPart[] = [];
+  for (let i = 0; i < result.files.length; i++) {
+    const full = path.join(outDir, result.files[i]);
+    parts.push({ buffer: await readFile(full), durationSec: Math.max(1, durations[i]), ext: "mp3", mime: "audio/mpeg" });
+    // Free each part's space as soon as it's in memory.
+    await rm(full, { force: true });
+  }
+  return { total, parts };
 }
