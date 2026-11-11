@@ -106,7 +106,7 @@ export async function enqueueTimings(messageIds: string[] | null, limit = 20): P
 }
 
 // The backlog: the next untranscribed messages that have audio, newest or oldest first.
-export async function enqueueBatch(size: number, order: "newest" | "oldest"): Promise<{ queued: number; batchId: string }> {
+export async function enqueueBatch(size: number, order: "newest" | "oldest", speaker?: string | null): Promise<{ queued: number; batchId: string }> {
   const batchId = randomUUID();
   const next = await prisma.message.findMany({
     where: {
@@ -114,6 +114,7 @@ export async function enqueueBatch(size: number, order: "newest" | "oldest"): Pr
       ...HAS_AUDIO_SOURCE,
       externalTranscriptUrl: null,
       jobs: { none: { status: { in: ["PENDING", "RUNNING"] } } },
+      ...(speaker ? { speaker } : {}),
     },
     orderBy: [{ date: order === "newest" ? "desc" : "asc" }, { createdAt: "asc" }],
     take: Math.min(Math.max(size, 1), 50),

@@ -38,11 +38,19 @@ export async function queueTranscription(messageId: string): Promise<ActionResul
   }
 }
 
-export async function runNextBatch(): Promise<ActionResult> {
+// The next batch, from one speaker if given, else the speaker chosen in Settings (or everyone).
+export async function runNextBatch(onlySpeaker?: string): Promise<ActionResult> {
   try {
     await requireUser([...REVIEWERS]);
-    const s = await getSettings(["batchSize", "batchOrder"]);
-    const { queued } = await enqueueBatch(Number(s.batchSize) || 10, s.batchOrder === "oldest" ? "oldest" : "newest");
+    const s = await getSettings(["batchSize", "batchOrder", "batchSpeaker"]);
+    const speaker = (typeof onlySpeaker === "string" ? onlySpeaker : s.batchSpeaker) || null;
+    const { queued } = await enqueueBatch(Number(s.batchSize) || 10, s.batchOrder === "oldest" ? "oldest" : "newest", speaker);
+    if (!queued && speaker) return { ok: `Nothing to queue: every message by ${speaker} with Podbean audio is transcribed or already in progress.` };
+    if (queued && speaker) {
+      after(kickRunner);
+      revalidatePath("/", "layout");
+      return { ok: `Queued ${queued} message${queued === 1 ? "" : "s"} by ${speaker}.` };
+    }
     if (!queued) {
       const noLink = await prisma.message.count({ where: { status: "NOT_STARTED", externalTranscriptUrl: null, audioUrl: null, NOT: { sourceUrl: { contains: "podbean.com/e/" } } } });
       return {

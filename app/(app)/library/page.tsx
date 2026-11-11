@@ -1,19 +1,33 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { currentUser } from "@/lib/auth";
+import { currentUser, canReview } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getSettings } from "@/lib/settings";
+import { HAS_AUDIO_SOURCE } from "@/lib/jobs";
+import { runNextBatch } from "@/app/actions/messages";
 import { libraryPage, libraryStats, readQuery, PAGE_SIZE } from "@/lib/library";
 import { formatDate, monthOverdue } from "@/lib/dates";
 import { PageHeading, StatCard, StatusChip, Empty } from "@/components/ui";
+import ActionButton from "@/components/ActionButton";
 import LibraryFilters from "@/components/LibraryFilters";
 import Pagination from "@/components/Pagination";
 
 export const metadata = { title: "Message library" };
 
 export default async function LibraryPage({ searchParams }: PageProps<"/library">) {
-  await currentUser();
+  const user = await currentUser();
   const query = readQuery(await searchParams);
-  const [stats, page] = await Promise.all([libraryStats(), libraryPage(query)]);
+  const [stats, page, speakerReady, batch] = await Promise.all([
+    libraryStats(),
+    libraryPage(query),
+    // Filtered to one speaker: how many of theirs could be transcribed now.
+    query.speaker && canReview(user.role)
+      ? prisma.message.count({ where: { speaker: query.speaker, status: "NOT_STARTED", externalTranscriptUrl: null, ...HAS_AUDIO_SOURCE, jobs: { none: { status: { in: ["PENDING", "RUNNING"] } } } } })
+      : Promise.resolve(0),
+    getSettings(["batchSize"]),
+  ]);
+  const batchSize = Math.min(Number(batch.batchSize) || 10, speakerReady);
   const pct = stats.total ? ((stats.approved / stats.total) * 100).toFixed(1) : "0";
   const kept = Object.fromEntries(Object.entries(query).filter(([k, v]) => v && k !== "page" && !(k === "tab" && v === "all")));
   const pageHref = (n: number) => {
@@ -63,6 +77,16 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
             <LibraryFilters speakers={stats.speakers} years={stats.years} />
           </Suspense>
         </div>
+        {query.speaker && speakerReady > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-banner px-4 py-3 text-sm">
+            <span>
+              <span className="font-medium">{speakerReady.toLocaleString()}</span> of {query.speaker}’s messages {speakerReady === 1 ? "isn’t" : "aren’t"} transcribed yet.
+            </span>
+            <ActionButton action={runNextBatch.bind(null, query.speaker)} className="btn-primary h-10 px-4 text-[13px]" pendingLabel="Queueing…">
+              Transcribe the next {batchSize}
+            </ActionButton>
+          </div>
+        )}
 
         {page.rows.length === 0 ? (
           stats.total === 0 ? (

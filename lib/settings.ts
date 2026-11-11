@@ -10,6 +10,8 @@ export const SETTING_DEFAULTS = {
   batchSize: "10",
   // Which way the backlog is worked through: "newest" or "oldest".
   batchOrder: "newest",
+  // Only queue this speaker's messages in batches ("" = everyone).
+  batchSpeaker: "",
   // Which speech-to-text service new transcriptions use: "gemini", "openai" or "elevenlabs".
   transcribeProvider: "gemini",
   // "1": messages that arrive from Podbean are queued for transcription straight away.

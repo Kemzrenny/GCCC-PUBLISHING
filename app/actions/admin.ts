@@ -57,6 +57,7 @@ const settingsSchema = z.object({
   transcribeProvider: z.string(),
   batchSize: z.coerce.number().int().min(1).max(50),
   batchOrder: z.enum(["newest", "oldest"]),
+  batchSpeaker: z.string().max(120),
   autoTranscribeNew: z.enum(["0", "1"]),
   manualsWritten: z.coerce.number().int().min(0).max(100000),
 });
@@ -68,6 +69,7 @@ export async function saveSettings(_: ActionResult, form: FormData): Promise<Act
       transcribeProvider: form.get("transcribeProvider"),
       batchSize: form.get("batchSize"),
       batchOrder: form.get("batchOrder"),
+      batchSpeaker: String(form.get("batchSpeaker") ?? ""),
       autoTranscribeNew: form.get("autoTranscribeNew") === "on" ? "1" : "0",
       manualsWritten: form.get("manualsWritten"),
     });
@@ -79,6 +81,7 @@ export async function saveSettings(_: ActionResult, form: FormData): Promise<Act
       setSetting("transcribeProvider", s.transcribeProvider),
       setSetting("batchSize", String(s.batchSize)),
       setSetting("batchOrder", s.batchOrder),
+      setSetting("batchSpeaker", s.batchSpeaker),
       setSetting("autoTranscribeNew", s.autoTranscribeNew),
       setSetting("manualsWritten", String(s.manualsWritten)),
     ]);

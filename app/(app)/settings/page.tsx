@@ -35,16 +35,24 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const me = await currentUser();
   if (me.role !== "ADMIN") redirect("/library");
   const [s, users, invites, queue] = await Promise.all([
-    getSettings(["transcribeProvider", "batchSize", "batchOrder", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult", "driveRefreshToken", "driveAccount", "driveLastError", "driveRootFolderId", "gloryRootFolderId", "gloryTemplateMembers", "gloryTemplateGuide"]),
+    getSettings(["transcribeProvider", "batchSize", "batchOrder", "batchSpeaker", "autoTranscribeNew", "manualsWritten", "sheetLastSync", "sheetLastError", "sheetDirty", "podbeanLastCheck", "podbeanLastResult", "driveRefreshToken", "driveAccount", "driveLastError", "driveRootFolderId", "gloryRootFolderId", "gloryTemplateMembers", "gloryTemplateGuide"]),
     prisma.user.findMany({ orderBy: [{ role: "asc" }, { name: "asc" }] }),
     prisma.invite.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } }),
   ]);
   const untranscribed = { status: "NOT_STARTED" as const, externalTranscriptUrl: null };
-  const [ready, noLink] = await Promise.all([
+  const [ready, noLink, readyBySpeaker] = await Promise.all([
     db.message.count({ where: { ...untranscribed, ...HAS_AUDIO_SOURCE } }),
     db.message.count({ where: { ...untranscribed, NOT: HAS_AUDIO_SOURCE } }),
+    db.message.groupBy({
+      by: ["speaker"],
+      where: { ...untranscribed, ...HAS_AUDIO_SOURCE, speaker: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { speaker: "desc" } },
+    }),
   ]);
+  const speakerReady = readyBySpeaker.map((r) => ({ name: r.speaker!, ready: r._count._all }));
+  const batchSpeaker = s.batchSpeaker || null;
   const [backedUp, transcripts, untimed, speakers] = await Promise.all([
     db.transcript.count({ where: { driveUrl: { not: null } } }),
     db.transcript.count(),
@@ -93,12 +101,13 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         </div>
         <div className="flex flex-wrap items-start gap-3">
           <ActionButton action={runNextBatch} className="btn-primary" pendingLabel="Queueing…">
-            Queue the next {s.batchSize} messages
+            Queue the next {s.batchSize} messages{batchSpeaker ? ` by ${batchSpeaker}` : ""}
           </ActionButton>
           <ActionButton action={runQueueNow} pendingLabel="Starting…">Resume the queue</ActionButton>
         </div>
         <p className="text-xs text-muted">
-          Queue adds the next untranscribed messages ({s.batchOrder === "oldest" ? "oldest" : "newest"} first). Resume restarts work on messages already
+          Queue adds the next untranscribed messages
+          {batchSpeaker ? ` by ${batchSpeaker} (${(speakerReady.find((r) => r.name === batchSpeaker)?.ready ?? 0).toLocaleString()} left)` : ""} ({s.batchOrder === "oldest" ? "oldest" : "newest"} first; change below). Resume restarts work on messages already
           in the queue if it seems stuck. It doesn’t add new ones.
         </p>
         {untimed > 0 && (
@@ -120,6 +129,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
         <TranscriptionSettings
           values={s}
           providers={PROVIDERS.map((p) => ({ key: p, label: PROVIDER_LABELS[p], ready: providerConfigured(p) }))}
+          speakers={speakerReady}
         />
       </section>
 

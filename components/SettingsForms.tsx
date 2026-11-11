@@ -48,9 +48,12 @@ type Provider = { key: string; label: string; ready: boolean };
 export function TranscriptionSettings({
   values,
   providers,
+  speakers,
 }: {
-  values: { transcribeProvider: string; batchSize: string; batchOrder: string; autoTranscribeNew: string; manualsWritten: string };
+  values: { transcribeProvider: string; batchSize: string; batchOrder: string; batchSpeaker: string; autoTranscribeNew: string; manualsWritten: string };
   providers: Provider[];
+  // Speakers with messages still to transcribe, and how many.
+  speakers: { name: string; ready: number }[];
 }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
   return (
@@ -74,6 +77,18 @@ export function TranscriptionSettings({
         <select id="batchOrder" name="batchOrder" className="field" defaultValue={values.batchOrder}>
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
+        </select>
+      </div>
+      <div>
+        <label className="label" htmlFor="batchSpeaker">Batches take messages by</label>
+        <select id="batchSpeaker" name="batchSpeaker" className="field" defaultValue={values.batchSpeaker}>
+          <option value="">Every speaker</option>
+          {values.batchSpeaker && !speakers.some((s) => s.name === values.batchSpeaker) && <option value={values.batchSpeaker}>{values.batchSpeaker} (all done)</option>}
+          {speakers.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name} ({s.ready.toLocaleString()} to do)
+            </option>
+          ))}
         </select>
       </div>
       <div>
