@@ -15,17 +15,16 @@ Phase 1 (this release):
 - **Team**: invite-only accounts with four roles: Admin, Reviewer, Writer, Viewer.
 
 Built on the same stack as The Doer Life: Next.js 16, React 19, Tailwind 4, Prisma on Neon
-Postgres, Vercel Blob, Gemini and Vercel Cron.
+Postgres, Gemini and Vercel Cron.
 
 ## Setting it up on Vercel
 
 1. Import this repo into Vercel.
 2. Add a Neon Postgres database (Storage tab) so `DATABASE_URL` is set. The first deploy creates the tables.
-3. Add a **private** Blob store (Storage tab) so `BLOB_READ_WRITE_TOKEN` is set.
-4. Add the other variables from `.env.example`: at least `JWT_SECRET`, `ADMIN_EMAILS`, `CRON_SECRET` and `GEMINI_API_KEY`.
-5. Deploy, open the site, and create your account with an email from `ADMIN_EMAILS`.
-6. In **Settings**: import the sheet (File › Download › CSV from the messages tab), then press **Check now** under Podbean to link the audio.
-7. Invite the team from Settings. They create their accounts on the sign-in page with the invited email.
+3. Add the other variables from `.env.example`: at least `JWT_SECRET`, `ADMIN_EMAILS`, `CRON_SECRET` and `GEMINI_API_KEY`.
+4. Deploy, open the site, and create your account with an email from `ADMIN_EMAILS`.
+5. In **Settings**: import the sheet (File › Download › CSV from the messages tab), then press **Check now** under Podbean to link the audio.
+6. Invite the team from Settings. They create their accounts on the sign-in page with the invited email.
 
 ### Trying the transcription services
 
@@ -48,7 +47,7 @@ npm run dev
 
 A sermon is too long to transcribe within one server request, so each job moves a step
 at a time (`lib/jobs.ts`): **PREPARE** downloads the audio and cuts it into parts kept in
-Blob, **PART** transcribes the next part, **FINISH** joins the parts and drafts the
+Gemini's file storage for 48 hours (or cut again from the recording later), **PART** transcribes the next part, **FINISH** joins the parts and drafts the
 summary. `/api/jobs/run` works through as many steps as fit in four minutes, then calls
 itself again if work is left. The scheduled round (`/api/cron/work`) also restarts it. A
 step that fails is retried twice before the job is marked failed with the reason.

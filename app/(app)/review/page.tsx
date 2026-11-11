@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { currentUser, canReview } from "@/lib/auth";
 import ReviewList from "@/components/ReviewList";
+import ActionButton from "@/components/ActionButton";
+import { retryFailed } from "@/app/actions/messages";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDuration } from "@/lib/dates";
 import { PageHeading, Empty } from "@/components/ui";
@@ -108,7 +110,14 @@ export default async function ReviewPage() {
           )}
         </section>
         <section className="card flex flex-col gap-3 p-6">
-          <h2 className="font-display text-xl font-semibold">Failed</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-semibold">Failed</h2>
+            {failed.length > 0 && canReview(user.role) && (
+              <ActionButton action={retryFailed} className="btn-quiet h-9 px-3 text-[13px]" pendingLabel="Queueing…">
+                Try all again
+              </ActionButton>
+            )}
+          </div>
           {failed.length === 0 ? (
             <p className="text-sm text-muted">No failed transcriptions.</p>
           ) : (

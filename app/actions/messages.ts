@@ -38,6 +38,22 @@ export async function queueTranscription(messageId: string): Promise<ActionResul
   }
 }
 
+// Every message whose transcription failed, queued again.
+export async function retryFailed(): Promise<ActionResult> {
+  try {
+    await requireUser([...REVIEWERS]);
+    const failed = await prisma.message.findMany({ where: { status: "FAILED" }, select: { id: true } });
+    const queued = failed.length ? await enqueue(failed.map((m) => m.id), { force: true }) : 0;
+    if (!queued) return { error: "Nothing to try again." };
+    after(kickRunner);
+    revalidatePath("/review");
+    revalidatePath("/library");
+    return { ok: `Queued ${queued} message${queued === 1 ? "" : "s"} again.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
 // The next batch, from one speaker if given, else the speaker chosen in Settings (or everyone).
 export async function runNextBatch(onlySpeaker?: string): Promise<ActionResult> {
   try {

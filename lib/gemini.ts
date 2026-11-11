@@ -80,7 +80,12 @@ async function callGemini(input: InteractionsInput, schema?: object, model = PRI
   throw classify(lastError);
 }
 
-async function uploadAudio(buffer: Buffer, mimeType: string) {
+export type GeminiAudio = { type: "audio"; uri: string; mime_type: string };
+export type StoredAudio = { uri: string; mime: string; name: string; at: string };
+
+// Uploads audio to Gemini's file storage, where it's kept for 48 hours. A sermon's parts are
+// uploaded once and used for both the transcript and the timings.
+export async function storeAudio(buffer: Buffer, mimeType: string): Promise<StoredAudio> {
   const tmpPath = path.join(tmpdir(), `${randomUUID()}.audio`);
   await writeFile(tmpPath, buffer);
   try {
@@ -91,12 +96,27 @@ async function uploadAudio(buffer: Buffer, mimeType: string) {
       await new Promise((r) => setTimeout(r, 1500));
       state = (await filesApi.get({ name: uploaded.name })).state;
     }
-    return { type: "audio" as const, uri: uploaded.uri, mime_type: uploaded.mimeType };
+    if (!uploaded.uri) throw new GeminiError("other", "Gemini didn't store the audio.");
+    return { uri: uploaded.uri, mime: uploaded.mimeType ?? mimeType, name: uploaded.name ?? "", at: new Date().toISOString() };
   } catch (err) {
     throw classify(err);
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
+}
+
+// Files are kept 48 hours; anything older than 40 is uploaded again rather than risked.
+export const storedAudioFresh = (a: StoredAudio | null | undefined): a is StoredAudio =>
+  !!a?.uri && Date.now() - new Date(a.at).getTime() < 40 * 3_600_000;
+
+export async function forgetAudio(names: string[]) {
+  const filesApi = ai().files as unknown as { delete: (a: { name: string }) => Promise<unknown> };
+  await Promise.all(names.filter(Boolean).map((name) => filesApi.delete({ name }).catch(() => {})));
+}
+
+async function audioInput(audio: Buffer | StoredAudio, mimeType: string): Promise<GeminiAudio> {
+  const stored = Buffer.isBuffer(audio) ? await storeAudio(audio, mimeType) : audio;
+  return { type: "audio", uri: stored.uri, mime_type: stored.mime };
 }
 
 export const NO_SPEECH = "[no speech]";
@@ -113,8 +133,8 @@ Respond with the transcript text only.`;
 // Speech runs about 15 characters a second; far more means the model is looping.
 const MAX_CHARS_PER_SECOND = 60;
 
-export async function geminiTranscribe(buffer: Buffer, mimeType: string, durationSec?: number) {
-  const audio = await uploadAudio(buffer, mimeType);
+export async function geminiTranscribe(source: Buffer | StoredAudio, mimeType: string, durationSec?: number) {
+  const audio = await audioInput(source, mimeType);
   // Parts are about 10 minutes, where the light model is fast and clean. Anything long or of
   // unknown length goes to the careful model, which drifts less.
   const long = !durationSec || durationSec > 15 * 60;
@@ -204,8 +224,8 @@ List every sentence spoken, in order, with the time it starts from the beginning
 - If there is no intelligible speech, return an empty list.
 Respond only with the JSON described by the schema.`;
 
-export async function geminiTimeline(buffer: Buffer, mimeType: string, durationSec?: number) {
-  const audio = await uploadAudio(buffer, mimeType);
+export async function geminiTimeline(source: Buffer | StoredAudio, mimeType: string, durationSec?: number) {
+  const audio = await audioInput(source, mimeType);
   const { text } = await callGemini([{ type: "text", text: TIMELINE_INSTRUCTION }, audio], timelineSchema, PRIMARY_MODEL);
   let parsed: unknown;
   try {

@@ -1,5 +1,5 @@
 import "server-only";
-import { geminiTranscribe, geminiConfigured } from "@/lib/gemini";
+import { geminiTranscribe, geminiConfigured, type StoredAudio } from "@/lib/gemini";
 
 // Speech-to-text, swappable. Each service gets the same ~10-minute part of a sermon and
 // returns plain text. Which one is used is a setting, so the team can compare them on
@@ -28,12 +28,18 @@ export function isProvider(v: string): v is Provider {
 const VOCABULARY =
   "Glory Centre Community Church, GCCC, Glory Realms Ministries, Papi, Pastor Olakunle Zakariya, Pastor Adesola Zakariya, Ojodu, Glory Home, Holy Spirit, Amen, Hallelujah";
 
-export type PartInput = { buffer: Buffer; mime: string; ext: string; durationSec?: number };
+// Gemini can use a part already in its file storage; the others need the audio itself.
+export type PartInput = { buffer?: Buffer; stored?: StoredAudio; mime: string; ext: string; durationSec?: number };
+
+function bytes(part: PartInput): Buffer {
+  if (!part.buffer) throw new Error("The audio for this part is missing.");
+  return part.buffer;
+}
 
 async function openaiTranscribe(part: PartInput) {
   const model = process.env.OPENAI_TRANSCRIBE_MODEL ?? "gpt-4o-transcribe";
   const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(part.buffer)], { type: part.mime }), `part.${part.ext}`);
+  form.append("file", new Blob([new Uint8Array(bytes(part))], { type: part.mime }), `part.${part.ext}`);
   form.append("model", model);
   form.append("response_format", "text");
   form.append("prompt", `A sermon. Names and terms: ${VOCABULARY}.`);
@@ -49,7 +55,7 @@ async function openaiTranscribe(part: PartInput) {
 async function elevenlabsTranscribe(part: PartInput) {
   const model = process.env.ELEVENLABS_STT_MODEL ?? "scribe_v1";
   const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(part.buffer)], { type: part.mime }), `part.${part.ext}`);
+  form.append("file", new Blob([new Uint8Array(bytes(part))], { type: part.mime }), `part.${part.ext}`);
   form.append("model_id", model);
   form.append("tag_audio_events", "false");
   form.append("diarize", "false");
@@ -67,5 +73,5 @@ export async function transcribePart(provider: Provider, part: PartInput): Promi
   if (!providerConfigured(provider)) throw new Error(`${PROVIDER_LABELS[provider]} isn't set up (its API key is missing).`);
   if (provider === "openai") return openaiTranscribe(part);
   if (provider === "elevenlabs") return elevenlabsTranscribe(part);
-  return geminiTranscribe(part.buffer, part.mime, part.durationSec);
+  return geminiTranscribe(part.stored ?? bytes(part), part.mime, part.durationSec);
 }

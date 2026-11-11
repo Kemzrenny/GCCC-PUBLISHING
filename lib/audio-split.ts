@@ -206,3 +206,40 @@ async function splitMp3(bin: string, dir: string, input: Buffer, segmentSeconds:
   }
   return { total, parts };
 }
+
+// One part of a recording (from `start`, `durationSec` long), cut again from the full audio:
+// used when a stored part is no longer available.
+export function extractWindow(input: Buffer, extension: string, start: number, durationSec: number): Promise<SplitPart> {
+  const next = queue.then(() => extractOne(input, extension, start, durationSec));
+  queue = next.catch(() => {});
+  return next;
+}
+
+async function extractOne(input: Buffer, extension: string, start: number, durationSec: number): Promise<SplitPart> {
+  const bin = await ffmpegBinary();
+  await clearLeftovers();
+  const ext = extension.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+  const dir = await mkdtemp(path.join(tmpdir(), "gccc-split-"));
+  try {
+    const window = ["-ss", String(start), "-t", String(durationSec)];
+    if (MP3.has(ext)) {
+      const out = path.join(dir, "part.mp3");
+      const { code } = await run(bin, ["-hide_banner", "-y", "-f", "mp3", "-i", "pipe:0", ...window, "-vn", "-c", "copy", out], input);
+      if (code === 0) return { buffer: await readFile(out), durationSec, ext: "mp3", mime: "audio/mpeg" };
+    }
+    const inputFile = path.join(dir, `input.${ext}`);
+    await writeFile(inputFile, input);
+    const copy = COPY_FORMATS[ext];
+    if (copy) {
+      const out = path.join(dir, `part.${copy.ext}`);
+      const { code } = await run(bin, ["-hide_banner", "-y", ...window, "-i", inputFile, "-vn", "-map", "0:a:0", "-c", "copy", out]);
+      if (code === 0) return { buffer: await readFile(out), durationSec, ext: copy.ext, mime: copy.mime };
+    }
+    const out = path.join(dir, "part.mp3");
+    const { code } = await run(bin, ["-hide_banner", "-y", ...window, "-i", inputFile, "-vn", "-map", "0:a:0", "-c:a", "libmp3lame", "-b:a", "64k", "-ac", "1", out]);
+    if (code !== 0) throw new Error("ffmpeg could not cut this part of the audio");
+    return { buffer: await readFile(out), durationSec, ext: REENCODE.ext, mime: REENCODE.mime };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}

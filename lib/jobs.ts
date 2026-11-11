@@ -1,11 +1,10 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import { put, get, del } from "@vercel/blob";
 import type { TranscriptionJob } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { splitAudio } from "@/lib/audio-split";
+import { splitAudio, extractWindow } from "@/lib/audio-split";
 import { transcribePart, isProvider, type Provider } from "@/lib/transcribe";
-import { analyseTranscript, geminiConfigured, geminiTimeline } from "@/lib/gemini";
+import { analyseTranscript, geminiConfigured, geminiTimeline, storeAudio, storedAudioFresh, forgetAudio, type StoredAudio } from "@/lib/gemini";
 import { getSetting, markSheetDirty } from "@/lib/settings";
 import { appUrl } from "@/lib/site";
 import { backupSoon } from "@/lib/drive";
@@ -14,7 +13,8 @@ import { Prisma } from "@prisma/client";
 
 // The transcription queue. A sermon is too long to transcribe inside one server request,
 // so each job moves forward a step at a time:
-//   PREPARE  download the audio from Podbean and cut it into ~10-minute parts (kept in Blob)
+//   PREPARE  download the audio from Podbean, cut it into ~10-minute parts and hand each
+//            to Gemini's file storage (kept 48 hours), so later steps needn't download again
 //   PART     transcribe the next part
 //   TIME     note when each sentence starts in the next part (for following along)
 //   FINISH   join the parts, draft the summary and themes, hand it to a reviewer
@@ -28,7 +28,18 @@ const MAX_ATTEMPTS = 3;
 const MAX_AUDIO_BYTES = 400 * 1024 * 1024;
 
 type Segment = { start: number; text: string };
-type Part = { pathname: string; durationSec: number; mime: string; ext: string; text?: string; segments?: Segment[] | null };
+// A part of the recording: where it starts, and Gemini's stored copy when there is one.
+// (Older jobs kept parts in Vercel Blob as "pathname"; those are cut again from the audio.)
+type Part = {
+  start?: number;
+  durationSec: number;
+  mime: string;
+  ext: string;
+  stored?: StoredAudio | null;
+  pathname?: string;
+  text?: string;
+  segments?: Segment[] | null;
+};
 
 const isTimings = (job: { kind: string }) => job.kind === "TIMINGS";
 
@@ -151,15 +162,34 @@ async function claimNext(): Promise<TranscriptionJob | null> {
   return null;
 }
 
-async function readBlob(pathname: string): Promise<Buffer> {
-  const result = await get(pathname, { access: "private" });
-  if (!result || result.statusCode !== 200 || !result.stream) throw new Error("A stored audio part is missing.");
-  return Buffer.from(await new Response(result.stream).arrayBuffer());
+async function downloadAudio(url: string): Promise<Buffer> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error(`Couldn't download the audio (${res.status}).`);
+  const size = Number(res.headers.get("content-length") ?? 0);
+  if (size > MAX_AUDIO_BYTES) throw new Error("The audio file is too large to process.");
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// The part's audio: Gemini's stored copy if it's still there, else cut again from the
+// recording (and, for Gemini, stored again for the next step).
+async function partAudio(job: TranscriptionJob, parts: Part[], i: number, wantStored: boolean): Promise<{ stored?: StoredAudio; buffer?: Buffer }> {
+  const part = parts[i];
+  if (wantStored && storedAudioFresh(part.stored)) return { stored: part.stored };
+  const message = await prisma.message.findUniqueOrThrow({ where: { id: job.messageId }, select: { audioUrl: true } });
+  if (!message.audioUrl) throw new Error("This message has no audio.");
+  const start = part.start ?? parts.slice(0, i).reduce((t, p) => t + (p.durationSec || 0), 0);
+  const cut = await extractWindow(await downloadAudio(message.audioUrl), extFromUrl(message.audioUrl), start, part.durationSec);
+  parts[i] = { ...part, start, mime: cut.mime, ext: cut.ext, pathname: undefined };
+  if (!wantStored) return { buffer: cut.buffer };
+  const stored = await storeAudio(cut.buffer, cut.mime);
+  parts[i].stored = stored;
+  return { stored };
 }
 
 async function cleanupParts(job: TranscriptionJob) {
   const parts = (job.parts as Part[] | null) ?? [];
-  if (parts.length) await del(parts.map((p) => p.pathname)).catch(() => {});
+  const names = parts.map((p) => p.stored?.name ?? "").filter(Boolean);
+  if (names.length && geminiConfigured()) await forgetAudio(names).catch(() => {});
 }
 
 async function prepare(job: TranscriptionJob) {
@@ -174,23 +204,18 @@ async function prepare(job: TranscriptionJob) {
     await prisma.message.update({ where: { id: message.id }, data: { audioUrl } });
   }
   if (!audioUrl) throw new Error("This message has no audio or Podbean link.");
-  const res = await fetch(audioUrl, { redirect: "follow" });
-  if (!res.ok) throw new Error(`Couldn't download the audio (${res.status}).`);
-  const size = Number(res.headers.get("content-length") ?? 0);
-  if (size > MAX_AUDIO_BYTES) throw new Error("The audio file is too large to process.");
-  const buffer = Buffer.from(await res.arrayBuffer());
+  const buffer = await downloadAudio(audioUrl);
   const ext = extFromUrl(audioUrl);
   const { total, parts } = await splitAudio(buffer, ext, PART_SECONDS);
   const pieces = parts ?? [{ buffer, durationSec: total, ext, mime: ext === "mp3" ? "audio/mpeg" : `audio/${ext}` }];
+  // Gemini keeps each part for the transcript and timings steps. Other services get the part
+  // cut again from the recording when its turn comes.
+  const useGemini = isTimings(job) || job.provider === "gemini" || !isProvider(job.provider);
   const stored: Part[] = [];
-  for (let i = 0; i < pieces.length; i++) {
-    const p = pieces[i];
-    const blob = await put(`audio/${message.id}/${job.id}/part${String(i + 1).padStart(2, "0")}.${p.ext}`, p.buffer, {
-      access: "private",
-      contentType: p.mime,
-      allowOverwrite: true,
-    });
-    stored.push({ pathname: blob.pathname, durationSec: p.durationSec, mime: p.mime, ext: p.ext });
+  let start = 0;
+  for (const p of pieces) {
+    stored.push({ start, durationSec: p.durationSec, mime: p.mime, ext: p.ext, stored: useGemini ? await storeAudio(p.buffer, p.mime) : null });
+    start += p.durationSec;
   }
   await prisma.$transaction([
     prisma.transcriptionJob.update({ where: { id: job.id }, data: { step: isTimings(job) ? "TIME" : "PART", parts: stored, nextPart: 0, nextTime: 0 } }),
@@ -210,8 +235,9 @@ async function transcribeNext(job: TranscriptionJob) {
     return;
   }
   const provider: Provider = isProvider(job.provider) ? job.provider : "gemini";
-  const { text } = await transcribePart(provider, { buffer: await readBlob(part.pathname), mime: part.mime, ext: part.ext, durationSec: part.durationSec });
-  parts[i] = { ...part, text };
+  const audio = await partAudio(job, parts, i, provider === "gemini");
+  const { text } = await transcribePart(provider, { ...audio, mime: parts[i].mime, ext: parts[i].ext, durationSec: part.durationSec });
+  parts[i] = { ...parts[i], text };
   await prisma.transcriptionJob.update({
     where: { id: job.id },
     data: { parts, nextPart: i + 1, attempts: 0, ...(i + 1 >= parts.length ? { step: afterParts() } : {}) },
@@ -233,12 +259,13 @@ async function timeNext(job: TranscriptionJob) {
   // in, rather than holding up the transcript. A timings-only job retries instead.
   let segments: Segment[] | null = null;
   try {
-    segments = await geminiTimeline(await readBlob(part.pathname), part.mime, part.durationSec);
+    const audio = await partAudio(job, parts, i, true);
+    segments = await geminiTimeline(audio.stored!, parts[i].mime, part.durationSec);
   } catch (err) {
     if (isTimings(job)) throw err;
     console.error(`Timings failed for part ${i + 1} of job ${job.id}:`, err);
   }
-  parts[i] = { ...part, segments };
+  parts[i] = { ...parts[i], segments };
   await prisma.transcriptionJob.update({
     where: { id: job.id },
     data: { parts, nextTime: i + 1, attempts: 0, ...(i + 1 >= parts.length ? { step: "FINISH" } : {}) },
