@@ -1,14 +1,15 @@
 import Link from "next/link";
-import { currentUser } from "@/lib/auth";
+import { currentUser, canReview } from "@/lib/auth";
+import ReviewList from "@/components/ReviewList";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatDuration } from "@/lib/dates";
-import { PageHeading, StatusChip, Empty } from "@/components/ui";
+import { PageHeading, Empty } from "@/components/ui";
 import { jobLooksStalled } from "@/lib/jobs";
 
 export const metadata = { title: "Review queue" };
 
 export default async function ReviewPage() {
-  await currentUser();
+  const user = await currentUser();
   const [toReview, working, failed] = await Promise.all([
     prisma.message.findMany({
       where: { status: { in: ["AI_DRAFT", "IN_REVIEW"] } },
@@ -53,22 +54,18 @@ export default async function ReviewPage() {
         {toReview.length === 0 ? (
           <Empty title="Nothing to review">New drafts appear here as soon as the AI finishes them.</Empty>
         ) : (
-          <ul className="flex flex-col">
-            {toReview.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center gap-4 border-b border-line py-4 last:border-0">
-                <div className="flex min-w-64 flex-1 flex-col gap-1">
-                  <Link href={`/messages/${m.id}#transcript`} className="text-[15px] font-medium hover:underline">{m.title}</Link>
-                  <span className="text-[13px] text-muted">
-                    {[formatDate(m.date), m.speaker, formatDuration(m.durationSec)].filter(Boolean).join(" · ")}
-                    {m.status === "IN_REVIEW" && m.transcript?.reviewer && ` · ${m.transcript.reviewer.name} is on it`}
-                  </span>
-                </div>
-                <StatusChip status={m.status} />
-                {m.needsDetails && <span className="text-xs text-alert">Needs details</span>}
-                <Link href={`/messages/${m.id}#transcript`} className="btn-quiet">Open</Link>
-              </li>
-            ))}
-          </ul>
+          <ReviewList
+            canApprove={canReview(user.role)}
+            rows={toReview.map((m) => ({
+              id: m.id,
+              title: m.title,
+              status: m.status,
+              needsDetails: m.needsDetails,
+              meta:
+                [formatDate(m.date), m.speaker, formatDuration(m.durationSec)].filter(Boolean).join(" · ") +
+                (m.status === "IN_REVIEW" && m.transcript?.reviewer ? ` · ${m.transcript.reviewer.name} is on it` : ""),
+            }))}
+          />
         )}
       </section>
 

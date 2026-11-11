@@ -10,7 +10,7 @@ import { geminiConfigured } from "@/lib/gemini";
 import { checkPodbean, finishLookups } from "@/lib/podbean";
 import { getSettings, markSheetDirty } from "@/lib/settings";
 import { looksLikeFuture } from "@/lib/dates";
-import { backupSoon } from "@/lib/drive";
+import { backupSoon, backupPending } from "@/lib/drive";
 import { resolveSpeaker } from "@/lib/speakers";
 
 export type ActionResult = { ok?: string; error?: string } | null;
@@ -222,6 +222,41 @@ export async function approveTranscript(messageId: string, text: string): Promis
     after(() => backupSoon(messageId));
     revalidatePath("/", "layout");
     return { ok: "Approved. It's now in the library for writers." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// Approves many transcripts at once from the review queue. Messages whose title or date
+// still need confirming are skipped, as they are when approving one by one.
+export async function approveMany(ids: string[]): Promise<ActionResult> {
+  try {
+    const user = await requireUser([...REVIEWERS]);
+    const list = z.array(z.string().min(1)).min(1, "Tick at least one message.").max(500).parse(ids);
+    const rows = await prisma.message.findMany({
+      where: { id: { in: list }, status: { in: ["AI_DRAFT", "IN_REVIEW"] } },
+      select: { id: true, needsDetails: true, transcript: { select: { id: true, text: true } } },
+    });
+    const ready = rows.filter((r) => !r.needsDetails && r.transcript?.text.trim());
+    const now = new Date();
+    for (const r of ready) {
+      await prisma.$transaction([
+        prisma.transcript.update({ where: { id: r.transcript!.id }, data: { approvedAt: now, reviewerId: user.id } }),
+        prisma.transcriptVersion.create({ data: { transcriptId: r.transcript!.id, text: r.transcript!.text, kind: "approve", authorId: user.id } }),
+        prisma.message.update({ where: { id: r.id }, data: { status: "APPROVED" } }),
+      ]);
+    }
+    if (ready.length) {
+      await markSheetDirty();
+      // Their Google Docs pick up the approval at the next backup round; start one now.
+      after(() => backupPending(Math.min(ready.length, 40)).catch(() => {}));
+    }
+    revalidatePath("/", "layout");
+    const skipped = rows.length - ready.length;
+    if (!ready.length) return { error: "None of these can be approved yet: confirm their title and date first." };
+    return {
+      ok: `Approved ${ready.length} transcript${ready.length === 1 ? "" : "s"}.${skipped ? ` ${skipped} skipped: confirm their title and date first.` : ""}`,
+    };
   } catch (err) {
     return fail(err);
   }
