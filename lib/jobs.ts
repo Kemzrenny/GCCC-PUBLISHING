@@ -4,8 +4,8 @@ import type { TranscriptionJob } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { splitAudio, extractWindow } from "@/lib/audio-split";
 import { transcribePart, isProvider, type Provider } from "@/lib/transcribe";
-import { analyseTranscript, geminiConfigured, geminiTimeline, storeAudio, storedAudioFresh, forgetAudio, type StoredAudio } from "@/lib/gemini";
-import { getSetting, markSheetDirty } from "@/lib/settings";
+import { analyseTranscript, dailyLimitUntil, geminiConfigured, geminiTimeline, storeAudio, storedAudioFresh, forgetAudio, type StoredAudio } from "@/lib/gemini";
+import { getSetting, setSetting, markSheetDirty } from "@/lib/settings";
 import { appUrl } from "@/lib/site";
 import { backupSoon } from "@/lib/drive";
 import { audioFromEpisodePage, isPodbeanEpisode } from "@/lib/podbean-parse";
@@ -262,7 +262,7 @@ async function timeNext(job: TranscriptionJob) {
     const audio = await partAudio(job, parts, i, true);
     segments = await geminiTimeline(audio.stored!, parts[i].mime, part.durationSec);
   } catch (err) {
-    if (isTimings(job)) throw err;
+    if (isTimings(job) || dailyLimitUntil(err)) throw err;
     console.error(`Timings failed for part ${i + 1} of job ${job.id}:`, err);
   }
   parts[i] = { ...parts[i], segments };
@@ -293,6 +293,8 @@ async function finish(job: TranscriptionJob) {
   let analysis: Awaited<ReturnType<typeof analyseTranscript>> | null = null;
   if (geminiConfigured()) {
     analysis = await analyseTranscript(text, { title: message.needsDetails ? null : message.title, speaker: message.speaker }).catch((err) => {
+      // Out of Gemini requests for today: wait, rather than send it to review without a summary.
+      if (dailyLimitUntil(err)) throw err;
       console.error("Analysis failed:", err);
       return null;
     });
@@ -359,9 +361,17 @@ async function fail(job: TranscriptionJob, err: unknown) {
 
 // Works through the queue until the time budget is used. Returns what it did and whether
 // work is left, so the caller can schedule another run.
+// When Gemini's daily allowance is used up, the queue waits until it resets.
+export async function geminiPause(): Promise<Date | null> {
+  const until = new Date((await getSetting("geminiPausedUntil")) || 0);
+  return until.getTime() > Date.now() ? until : null;
+}
+
 export async function runJobs(budgetMs: number): Promise<{ steps: number; remaining: number }> {
   const started = Date.now();
   let steps = 0;
+  const pending = () => prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } });
+  if (geminiConfigured() && (await geminiPause())) return { steps: 0, remaining: await pending() };
   // A step (a download, or one part) can take up to ~2 minutes, so only start one early in
   // the run. Starting late risks being cut off mid-step, which also loses the hand-over.
   while (Date.now() - started < budgetMs * 0.2) {
@@ -369,14 +379,21 @@ export async function runJobs(budgetMs: number): Promise<{ steps: number; remain
     if (!job) break;
     try {
       await step(job);
-      await prisma.transcriptionJob.updateMany({ where: { id: job.id, status: "RUNNING" }, data: { lockedAt: null } });
+      await prisma.transcriptionJob.updateMany({ where: { id: job.id, status: "RUNNING" }, data: { lockedAt: null, error: null } });
     } catch (err) {
+      const until = dailyLimitUntil(err);
+      if (until) {
+        // Not the job's fault: it keeps its place and carries on when the limit resets.
+        await setSetting("geminiPausedUntil", until.toISOString());
+        await prisma.transcriptionJob.update({ where: { id: job.id }, data: { lockedAt: null, error: null, updatedAt: new Date() } });
+        console.warn(`Gemini's daily limit is used up; the queue waits until ${until.toISOString()}.`);
+        break;
+      }
       await fail(job, err);
     }
     steps++;
   }
-  const remaining = await prisma.transcriptionJob.count({ where: { status: { in: ["PENDING", "RUNNING"] } } });
-  return { steps, remaining };
+  return { steps, remaining: await pending() };
 }
 
 // Starts a runner in a new request (fire and forget), so the queue keeps moving after the
@@ -397,6 +414,7 @@ export async function kickRunner() {
 let lastNudge = 0;
 export async function nudgeStalledQueue() {
   if (Date.now() - lastNudge < 60_000) return;
+  if (geminiConfigured() && (await geminiPause())) return;
   const stale = new Date(Date.now() - LOCK_MS);
   const quiet = new Date(Date.now() - 2 * 60_000);
   const [active, waiting] = await Promise.all([

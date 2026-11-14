@@ -46,6 +46,14 @@ export function looksLikeFuture(d: Date, now = new Date()): boolean {
   return d.getTime() > now.getTime() + 2 * 86_400_000;
 }
 
+// "9:10am", or "Sun 9:10am" when it isn't today, in Lagos time.
+export function lagosTime(d: Date, now = new Date()): string {
+  const opts = { timeZone: "Africa/Lagos" } as const;
+  const time = d.toLocaleTimeString("en-GB", { ...opts, hour: "numeric", minute: "2-digit", hour12: true }).replace(" ", "").toLowerCase();
+  const day = (x: Date) => x.toLocaleDateString("en-GB", { ...opts, weekday: "short", day: "numeric" });
+  return day(d) === day(now) ? time : `${d.toLocaleDateString("en-GB", { ...opts, weekday: "short" })} ${time}`;
+}
+
 export function formatDuration(sec: number | null | undefined): string {
   if (!sec) return "";
   const h = Math.floor(sec / 3600);

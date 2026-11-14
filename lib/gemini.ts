@@ -54,6 +54,24 @@ function classify(err: unknown): GeminiError {
   return new GeminiError("other", message);
 }
 
+// Gemini's daily allowance (500 requests a day per model on the free plan) is used up. Returns
+// when to try again, read from the error ("Please retry in 1h41m21s"), or null for any other
+// error, including the per-minute limit, which clears by itself in seconds.
+export function dailyLimitUntil(err: unknown, now = Date.now()): Date | null {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (errorStatus(err) !== 429 && !/rate limit|quota/i.test(message)) return null;
+  if (!/per day|perday|daily/i.test(message)) return null;
+  let seconds = 0;
+  const human = /retry in\s+((?:\d+h)?\s*(?:\d+m)?\s*(?:[\d.]+s)?)/i.exec(message)?.[1];
+  if (human) {
+    const [, h, m, s] = /(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/.exec(human) ?? [];
+    seconds = Number(h ?? 0) * 3600 + Number(m ?? 0) * 60 + Number(s ?? 0);
+  }
+  seconds ||= Number(/"?retryDelay"?\s*:\s*"(\d+)s"/.exec(message)?.[1] ?? 0);
+  // Unknown: look again in an hour.
+  return new Date(now + (seconds > 0 ? seconds + 60 : 3600) * 1000);
+}
+
 async function callGemini(input: InteractionsInput, schema?: object, model = PRIMARY_MODEL): Promise<{ text: string; model: string }> {
   let current = model;
   let lastError: unknown;
@@ -72,6 +90,8 @@ async function callGemini(input: InteractionsInput, schema?: object, model = PRI
       const status = errorStatus(err);
       const transient = status === undefined || status === 429 || status >= 500;
       if (!transient) break;
+      // The day's allowance is gone for this model: only the other model can help.
+      if (dailyLimitUntil(err) && current === FALLBACK_MODEL) break;
       // A busy or rate-limited model: try the other one, then wait a little between tries.
       if (current !== FALLBACK_MODEL) current = FALLBACK_MODEL;
       else await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));

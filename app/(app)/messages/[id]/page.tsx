@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ExternalLink, ArrowLeft } from "lucide-react";
 import { currentUser, canReview } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatDate, formatDuration, isoDay } from "@/lib/dates";
+import { formatDate, formatDuration, isoDay, lagosTime } from "@/lib/dates";
 import { STAGE_LABEL, monthLabel, saturdayFrom, type Stage } from "@/lib/glory";
 import { lagosToday } from "@/lib/glory-data";
 import { missingDetails, titleKnown } from "@/lib/needs";
@@ -16,7 +16,7 @@ import { readTimeline } from "@/lib/align";
 import AutoRefresh from "@/components/AutoRefresh";
 import ActionButton from "@/components/ActionButton";
 import { queueTranscription, cancelTranscription } from "@/app/actions/messages";
-import { jobLooksStalled } from "@/lib/jobs";
+import { jobLooksStalled, geminiPause } from "@/lib/jobs";
 import { isPodbeanEpisode } from "@/lib/podbean-parse";
 
 export async function generateMetadata({ params }: PageProps<"/messages/[id]">) {
@@ -55,6 +55,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
   // Transcription and timings are separate jobs: only transcription replaces the transcript box.
   const job = m.jobs.find((j) => j.kind !== "TIMINGS");
   const activeJob = job && isActive(job) ? job : null;
+  const paused = activeJob ? await geminiPause() : null;
   const timingsJob = m.jobs.find((j) => j.kind === "TIMINGS");
   const timeline = readTimeline(m.transcript?.timeline);
   const parts = (activeJob?.parts as { text?: string }[] | null) ?? [];
@@ -134,7 +135,9 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                     {activeJob.step === "FINISH" && "Putting the transcript together"}
                   </span>
                   <span className="text-sm text-muted">
-                    {activeJob.error
+                    {paused
+                      ? `Gemini’s free daily limit is used up. This carries on by itself at about ${lagosTime(paused)}.`
+                      : activeJob.error
                       ? `Retrying (${activeJob.attempts} of 3) after a problem: ${activeJob.error}`
                       : activeJob.status === "RUNNING" && jobLooksStalled(activeJob)
                         ? "Paused. It restarts on its own now."

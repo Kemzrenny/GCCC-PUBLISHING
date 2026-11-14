@@ -5,15 +5,15 @@ import ActionButton from "@/components/ActionButton";
 import AutoRefresh from "@/components/AutoRefresh";
 import { retryFailed } from "@/app/actions/messages";
 import { prisma } from "@/lib/prisma";
-import { formatDate, formatDuration } from "@/lib/dates";
+import { formatDate, formatDuration, lagosTime } from "@/lib/dates";
 import { PageHeading, Empty } from "@/components/ui";
-import { jobLooksStalled } from "@/lib/jobs";
+import { jobLooksStalled, geminiPause } from "@/lib/jobs";
 
 export const metadata = { title: "Review queue" };
 
 export default async function ReviewPage() {
   const user = await currentUser();
-  const [toReview, working, failed] = await Promise.all([
+  const [toReview, working, failed, paused] = await Promise.all([
     prisma.message.findMany({
       where: { status: { in: ["AI_DRAFT", "IN_REVIEW"] } },
       orderBy: [{ status: "desc" }, { updatedAt: "asc" }],
@@ -42,6 +42,7 @@ export default async function ReviewPage() {
       include: { message: { select: { id: true, title: true } } },
       take: 20,
     }),
+    geminiPause(),
   ]);
 
   return (
@@ -78,6 +79,11 @@ export default async function ReviewPage() {
             <h2 className="font-display text-xl font-semibold">Being transcribed</h2>
             {working.length > 0 && <AutoRefresh />}
           </div>
+          {paused && working.length > 0 && (
+            <p className="rounded-xl bg-banner p-3 text-[13px]">
+              Gemini’s free daily limit is used up. Transcription carries on by itself at about {lagosTime(paused)}.
+            </p>
+          )}
           {working.length === 0 ? (
             <p className="text-sm text-muted">Nothing in the queue. Use Run next batch to start on the backlog.</p>
           ) : (
@@ -85,7 +91,7 @@ export default async function ReviewPage() {
               {working.map((j) => {
                 const parts = (j.parts as unknown[] | null)?.length ?? 0;
                 // Only a started job can be paused; queued ones are waiting their turn.
-                const stalled = j.status === "RUNNING" && jobLooksStalled(j);
+                const stalled = !paused && j.status === "RUNNING" && jobLooksStalled(j);
                 return (
                   <li key={j.id} className="flex flex-col gap-0.5">
                     <div className="flex justify-between gap-3">

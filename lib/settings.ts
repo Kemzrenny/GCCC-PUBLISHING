@@ -42,6 +42,8 @@ export const SETTING_DEFAULTS = {
   // Emails the Glory Home folder has been shared with.
   gloryShared: "[]",
   gloryLastImport: "",
+  // When Gemini's daily limit is used up, the queue waits until this time (ISO).
+  geminiPausedUntil: "",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
