@@ -1,10 +1,20 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { startTransition, useActionState, useState, useTransition } from "react";
 import type { Role } from "@prisma/client";
 import { importSheet, saveSettings, inviteMember, removeInvite, updateMember } from "@/app/actions/admin";
 import type { ActionResult } from "@/app/actions/messages";
 import { Section, Row } from "@/components/settings/Section";
+
+// Settings forms keep what was chosen after saving. (A plain <form action> is cleared back
+// to the values the page loaded with, which made a saved choice look lost.)
+function keepValues(dispatch: (form: FormData) => void) {
+  return (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    startTransition(() => dispatch(form));
+  };
+}
 
 function Result({ state }: { state: ActionResult }) {
   if (!state) return null;
@@ -58,7 +68,7 @@ export function TranscriptionSettings({
 }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
   return (
-    <form action={action}>
+    <form onSubmit={keepValues(action)}>
       <Section title="Preferences" description="How new work is picked and which service writes the text.">
         <Row title="Transcription service" hint="Gemini also adds the timings and the summary, whichever service writes the text.">
           <label className="sr-only" htmlFor="provider">Transcription service</label>
@@ -118,7 +128,7 @@ export function TranscriptionSettings({
 export function ManualsWrittenForm({ value }: { value: string }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
   return (
-    <form action={action} className="flex flex-wrap items-end gap-3">
+    <form onSubmit={keepValues(action)} className="flex flex-wrap items-end gap-3">
       <div>
         <label className="label" htmlFor="manualsWritten">Manuals written so far</label>
         <input id="manualsWritten" name="manualsWritten" type="number" min={0} className="field w-36" defaultValue={value} />
