@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { gloryConfig } from "@/lib/glory-config";
 import { manualCode, saturdaysIn, teamFor } from "@/lib/glory";
-import { LINED_UP, QUEUE_ORDER, lagosToday } from "@/lib/glory-data";
+import { LINED_UP, QUEUE_ORDER, lagosToday, queueWhere } from "@/lib/glory-data";
 import { defaultWriters } from "@/lib/glory-series";
 
 // Lining up messages for Glory Home: the coordinator works through one speaker's messages in
@@ -62,7 +62,7 @@ export async function lineUp(messageIds: string[]): Promise<number> {
   for (const messageId of messageIds) {
     pos++;
     const exists = await prisma.manual.findFirst({ where: { messageId, ...LINED_UP } });
-    if (exists) await prisma.manual.update({ where: { id: exists.id }, data: { queuePosition: pos } });
+    if (exists) await prisma.manual.update({ where: { id: exists.id }, data: { queuePosition: pos, plannedMonth: null } });
     else {
       await prisma.manual.create({ data: { messageId, queuePosition: pos, stage: "PLANNED", source: "portal" } });
       added++;
@@ -74,6 +74,12 @@ export async function lineUp(messageIds: string[]): Promise<number> {
 // The queue in the order given (ids of lined-up manuals).
 export async function reorderQueue(ids: string[]) {
   await prisma.$transaction(ids.map((id, i) => prisma.manual.updateMany({ where: { id, ...LINED_UP }, data: { queuePosition: i + 1 } })));
+}
+
+// An old assignment goes back into the queue, at the end.
+export async function requeue(id: string) {
+  const top = await prisma.manual.aggregate({ _max: { queuePosition: true }, where: LINED_UP });
+  await prisma.manual.updateMany({ where: { id, ...LINED_UP }, data: { plannedMonth: null, queuePosition: (top._max.queuePosition ?? 0) + 1 } });
 }
 
 export async function removeFromQueue(id: string) {
@@ -90,7 +96,7 @@ export async function fillMonth(month: string): Promise<{ planned: number; free:
   const free = saturdays.filter((d) => !taken.some((t) => t.saturday!.getTime() === d.getTime()));
   if (!free.length) return { planned: 0, free: 0 };
   const lined = await prisma.manual.findMany({
-    where: { ...LINED_UP, messageId: { not: null } },
+    where: { AND: [queueWhere(), { messageId: { not: null } }] },
     orderBy: QUEUE_ORDER,
   });
   const { teams, rotation } = await gloryConfig();

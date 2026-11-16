@@ -4,7 +4,8 @@ import { parseManualNumbers, parseWriters, titleCore, type Stage } from "./glory
 // Reads the MASTER SHEET tab of the Glory Home schedule. Rows are typed by hand, so:
 //  - a row can hold two manuals ("MANUAL 165\nMANUAL 166", topics on separate lines);
 //  - a follow-on manual leaves the sermon blank ("PART 2"), meaning the row above's sermon;
-//  - a row with a writer and a sermon but no manual number is a message lined up for a month.
+//  - a row with a sermon but no manual number is a message lined up, with or without writers
+//    (the coordinator lists the next sermons first and assigns writers later).
 
 export type Cell = { text: string; link: string | null; date?: Date | null };
 
@@ -147,20 +148,20 @@ export function readMasterSheet(rows: Cell[][], now = new Date()): SheetManual[]
           notes: update,
         });
       });
-    } else if (writerRaw && (sermon.link || sermon.title)) {
-      // Lined up for a team's month, not written yet.
-      const mi = w.month;
+    } else if (sermon.link || sermon.title) {
+      // Lined up, not written yet: for a team's month if a writer is named.
+      const mi = writerRaw ? w.month : null;
       // A writer's month is the next time that month comes round after the sermon.
       let year = sectionYear ?? sermon.date?.getUTCFullYear() ?? lastYear ?? now.getUTCFullYear();
       if (!sectionYear && sermon.date && mi && mi < sermon.date.getUTCMonth() + 1) year++;
       out.push({
-        key: `sheet-lined:${titleCore(sermon.link ?? sermon.title)}:${titleCore(writerRaw)}`,
+        key: `sheet-lined:${titleCore(sermon.link ?? sermon.title)}`,
         number: null,
         topic: null,
         saturday: null,
         stage: "PLANNED",
-        membersWriter: w.members,
-        guideWriter: w.guide,
+        membersWriter: writerRaw ? w.members : null,
+        guideWriter: writerRaw ? w.guide : null,
         plannedMonth: mi ? `${year}-${String(mi).padStart(2, "0")}` : null,
         part: null,
         parts: null,
@@ -191,8 +192,14 @@ export function readMasterSheet(rows: Cell[][], now = new Date()): SheetManual[]
       m.parts = group.length;
     });
   }
+  // Sermons listed without a writer count only at the end of the sheet, after the last one
+  // given to a writer: that's where the coordinator lists the next ones. Older unassigned rows
+  // are left out.
+  const assigned = out.filter((m) => m.number || m.membersWriter).map((m) => m.sermon.date?.getTime() ?? 0);
+  const latest = assigned.length ? Math.max(...assigned) : 0;
+  const keep = out.filter((m) => m.number || m.membersWriter || (m.sermon.date && m.sermon.date.getTime() > latest));
   // Keys must be unique: a sheet can list the same lined-up message twice.
   const seen = new Set<string>();
-  return out.filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
+  return keep.filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
 }
 

@@ -78,9 +78,19 @@ export async function thisWeek(now = new Date()): Promise<WeekItem[]> {
   return items.sort((a, b) => a.at - b.at).map(({ at, ...rest }) => (void at, rest));
 }
 
-// The lined-up queue: messages chosen, no Saturday yet.
+// The lined-up queue: messages chosen, no Saturday yet. Ones given to a team for a month
+// that has passed without a manual being recorded are kept apart (see stale below).
+export function queueWhere(now = new Date()): Prisma.ManualWhereInput {
+  return { ...LINED_UP, OR: [{ plannedMonth: null }, { plannedMonth: { gte: currentMonth(now) } }] };
+}
+export const staleWhere = (now = new Date()): Prisma.ManualWhereInput => ({ ...LINED_UP, plannedMonth: { lt: currentMonth(now) } });
+
 export async function linedUp() {
-  return prisma.manual.findMany({ where: LINED_UP, include: manualInclude, orderBy: QUEUE_ORDER, take: 60 });
+  return prisma.manual.findMany({ where: queueWhere(), include: manualInclude, orderBy: QUEUE_ORDER, take: 60 });
+}
+
+export async function staleLinedUp() {
+  return prisma.manual.findMany({ where: staleWhere(), include: manualInclude, orderBy: [{ plannedMonth: "desc" }, { createdAt: "asc" }], take: 60 });
 }
 
 export function currentMonth(now = new Date()) {

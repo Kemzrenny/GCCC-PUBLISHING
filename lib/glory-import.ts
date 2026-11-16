@@ -7,6 +7,7 @@ import { STAGES, titleCore, similarity, manualCode, docTitle, type Stage } from 
 import { gloryFolder, uploadFile } from "@/lib/glory-drive";
 import { accessToken } from "@/lib/drive";
 import { markSheetDirty, setSetting } from "@/lib/settings";
+import { LINED_UP } from "@/lib/glory-data";
 
 // Bringing in the manuals done before the portal: the Glory Home schedule's MASTER SHEET
 // (numbers, topics, writers, Saturdays, which sermon) and the Glory Home folder's documents.
@@ -90,12 +91,30 @@ export async function importMasterSheet(buffer: Buffer): Promise<SheetImportResu
   const rows = readMasterSheet(await masterSheetCells(buffer));
   const result: SheetImportResult = { manuals: 0, created: 0, updated: 0, matched: 0, unmatched: 0, linedUp: 0 };
   const cache = new Map<string, string | null>();
+  const top = await prisma.manual.aggregate({ _max: { queuePosition: true }, where: LINED_UP });
+  let queueEnd = top._max.queuePosition ?? 0;
   for (const r of rows) {
     const messageId = await matchSermon(r.sermon, cache);
+    const lined = !r.number;
+    // Older imports keyed lined-up rows by sermon and writer; find those too.
+    const oldKey = lined ? { importKey: { startsWith: `${r.key}:` } } : null;
     const existing = await prisma.manual.findFirst({
-      where: { OR: [{ importKey: r.key }, ...(r.number ? [{ number: r.number }] : [])] },
+      where: {
+        OR: [
+          { importKey: r.key },
+          ...(oldKey ? [oldKey] : []),
+          ...(r.number ? [{ number: r.number }] : []),
+          ...(lined && messageId ? [{ messageId, ...LINED_UP }] : []),
+        ],
+      },
       orderBy: { createdAt: "asc" },
     });
+    if (lined) {
+      // The portal has taken it from here (given it a Saturday or a number): leave it.
+      if (existing && (existing.saturday || existing.number)) continue;
+      // Already made into a manual in the portal: don't line it up again.
+      if (!existing && messageId && (await prisma.manual.findFirst({ where: { messageId, NOT: LINED_UP }, select: { id: true } }))) continue;
+    }
     const data = {
       title: r.topic ?? existing?.title ?? null,
       number: r.number,
@@ -120,7 +139,8 @@ export async function importMasterSheet(buffer: Buffer): Promise<SheetImportResu
       await prisma.manual.update({ where: { id: existing.id }, data });
       result.updated++;
     } else {
-      await prisma.manual.create({ data: { ...data, source: "master-sheet" } });
+      // New lined-up messages join the end of the queue, in the sheet's order.
+      await prisma.manual.create({ data: { ...data, source: "master-sheet", ...(lined ? { queuePosition: ++queueEnd } : {}) } });
       result.created++;
     }
     if (r.number) result.manuals++;

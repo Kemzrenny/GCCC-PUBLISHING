@@ -304,6 +304,9 @@ test("Glory Home: the master sheet's rows become manuals", async () => {
     row(["", "", "", "", "", "Victor and Hannie(AUGUST)", "MANUAL 182", "Doctrine", "", "", "", "", ""]),
     row(["GLORY HOME MANUAL SCHEDULE FROM 27TH DECEMBER 2025"]),
     row(["26th March 2026", "", "The Mystery of Salvation", "https://www.podbean.com/ew/pb-4r35q-1b05896", "Pastor Olakunle Zakariya", "NDI (Nov)", "", "", "", "", "", "", ""]),
+    // Listed for later, no writer yet.
+    row(["2nd April 2026", "", "Understanding Seasons", "https://www.podbean.com/ew/pb-g73jq-1aee8d6", "", "", "", "", "", "", "", "", ""]),
+    row(["9th April 2026", "", "The Consciousness of your Identity in Christ", "https://www.podbean.com/ew/pb-ngshq-1b09507", "", "", "", "", "", "", "", "", ""]),
   ];
   const out = readMasterSheet(rows, new Date("2026-11-10T12:00:00Z"));
   const by = (n: number) => out.find((m) => m.number === n)!;
@@ -315,9 +318,17 @@ test("Glory Home: the master sheet's rows become manuals", async () => {
   assert.equal(by(181).sermon.title, null, "a different writer doesn't borrow the sermon above");
   assert.equal(by(182).sermon.title, null, "nor does the row after it");
   assert.equal(by(160).stage, "TAUGHT");
-  const lined = out.find((m) => !m.number)!;
-  assert.equal(lined.plannedMonth, "2026-11");
-  assert.equal(lined.membersWriter, "Ndifreke");
+  const lined = out.filter((m) => !m.number);
+  assert.equal(lined[0].plannedMonth, "2026-11");
+  assert.equal(lined[0].membersWriter, "Ndifreke");
+  assert.deepEqual(
+    lined.slice(1).map((m) => [m.sermon.title, m.sermon.date?.toISOString().slice(0, 10), m.membersWriter, m.plannedMonth]),
+    [
+      ["Understanding Seasons", "2026-04-02", null, null],
+      ["The Consciousness of your Identity in Christ", "2026-04-09", null, null],
+    ],
+    "sermons listed without a writer are lined up too",
+  );
 });
 
 test("Glory Home: the folder's files are sorted into manuals", async () => {

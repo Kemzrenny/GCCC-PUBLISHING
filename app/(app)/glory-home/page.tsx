@@ -12,7 +12,8 @@ import PlanPanel from "@/components/glory/PlanPanel";
 import LineUpPanel from "@/components/glory/LineUpPanel";
 import GloryTabs from "@/components/glory/GloryTabs";
 import LinedUpQueue from "@/components/glory/LinedUpQueue";
-import { monthView, linedUp, currentMonth, lagosToday, needsProgressCheck } from "@/lib/glory-data";
+import StaleList from "@/components/glory/StaleList";
+import { monthView, linedUp, staleLinedUp, currentMonth, lagosToday, needsProgressCheck } from "@/lib/glory-data";
 import { nextToLineUp } from "@/lib/glory-lineup";
 import { readLog } from "@/lib/glory-series";
 import { readProgress } from "@/lib/glory-drive";
@@ -37,9 +38,10 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
   const lineUpId = one(sp.lineup) ?? null;
   const showLineUp = one(sp.add) === "1" && canEdit;
 
-  const [view, lined, templates, log, manualCount] = await Promise.all([
+  const [view, lined, stale, templates, log, manualCount] = await Promise.all([
     monthView(key),
     linedUp(),
+    staleLinedUp(),
     getSettings(["gloryTemplateMembers", "gloryTemplateGuide"]),
     readLog(),
     prisma.manual.count({ where: { NOT: { saturday: null, number: null, stage: "PLANNED" } } }),
@@ -50,8 +52,8 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
   const nextKey = addMonths(key, 1);
 
   // Who has been writing: read the documents again if it's been a while.
-  const stale = needsProgressCheck(view.weeks.map((w) => w.manual));
-  if (stale.length) after(async () => void ((await driveConnected()) && (await readProgress(stale).catch(() => {}))));
+  const unchecked = needsProgressCheck(view.weeks.map((w) => w.manual));
+  if (unchecked.length) after(async () => void ((await driveConnected()) && (await readProgress(unchecked).catch(() => {}))));
 
   let preset: MessagePick | null = null;
   if (planDate && presetId) {
@@ -172,6 +174,19 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
               </>
             )}
           </section>
+
+          <StaleList
+            key={stale.map((l) => l.id).join(",")}
+            canEdit={canEdit}
+            rows={stale.map((l) => ({
+              id: l.id,
+              title: l.message?.title ?? l.sourceTitle ?? (l.sourceLink ? "A sermon (link only)" : "A sermon"),
+              href: l.message ? `/messages/${l.message.id}` : `/glory-home/manuals/${l.id}`,
+              meta: [l.plannedMonth ? monthLabel(l.plannedMonth) : null, [l.membersWriter, l.guideWriter !== l.membersWriter ? l.guideWriter : null].filter(Boolean).join(" & ") || null, l.message ? formatDate(l.message.date) : "Not in the library"]
+                .filter(Boolean)
+                .join(" · "),
+            }))}
+          />
 
           {log.length > 0 && (
             <details className="card p-5">

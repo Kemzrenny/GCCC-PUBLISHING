@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { markSheetDirty, setSetting, getSettings } from "@/lib/settings";
 import { createManualDocs, shareWithTeam, retitleManualDocs, readProgress } from "@/lib/glory-drive";
 import { changeParts, previewNew, previewParts, describe, defaultWriters, logChange } from "@/lib/glory-series";
-import { lineUp, fillMonth, reorderQueue, removeFromQueue } from "@/lib/glory-lineup";
+import { lineUp, fillMonth, reorderQueue, removeFromQueue, requeue } from "@/lib/glory-lineup";
 import { outlineSections, geminiConfigured } from "@/lib/gemini";
 import { gloryConfig } from "@/lib/glory-config";
 import { STAGES, nextStage, manualCode, monthKey, teamFor, isMonthKey, shortDay, type Stage } from "@/lib/glory";
@@ -191,6 +191,17 @@ export async function reorderLinedUp(ids: string[]): Promise<ActionResult> {
     await reorderQueue(ids.slice(0, 200));
     refresh();
     return { ok: "Order saved." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function requeueLinedUp(id: string): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    await requeue(id);
+    refresh();
+    return { ok: "Back in the queue." };
   } catch (err) {
     return fail(err);
   }
