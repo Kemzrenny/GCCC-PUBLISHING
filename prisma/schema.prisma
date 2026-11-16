@@ -240,6 +240,8 @@ model Manual {
   notes     String?
   // The parts made from one message share a series id (the first part's id).
   seriesId  String?
+  // Place in the lined-up queue (lined-up messages only): the top gets the next free Saturday.
+  queuePosition Int?
   // The writers have said how many manuals the message makes.
   partsConfirmed Boolean @default(false)
   // Writing progress, read from the two Google Docs.

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { gloryConfig } from "@/lib/glory-config";
 import { manualCode, saturdaysIn, teamFor } from "@/lib/glory";
-import { LINED_UP, lagosToday } from "@/lib/glory-data";
+import { LINED_UP, QUEUE_ORDER, lagosToday } from "@/lib/glory-data";
 import { defaultWriters } from "@/lib/glory-series";
 
 // Lining up messages for Glory Home: the coordinator works through one speaker's messages in
@@ -54,20 +54,33 @@ export async function nextToLineUp(limit = 12) {
   return { speaker, last, next, skipped, skippedCount };
 }
 
-export async function lineUp(messageIds: string[], month: string): Promise<number> {
+// Adds messages to the end of the lined-up queue, in the order given.
+export async function lineUp(messageIds: string[]): Promise<number> {
+  const top = await prisma.manual.aggregate({ _max: { queuePosition: true }, where: LINED_UP });
+  let pos = top._max.queuePosition ?? 0;
   let added = 0;
   for (const messageId of messageIds) {
+    pos++;
     const exists = await prisma.manual.findFirst({ where: { messageId, ...LINED_UP } });
-    if (exists) await prisma.manual.update({ where: { id: exists.id }, data: { plannedMonth: month } });
+    if (exists) await prisma.manual.update({ where: { id: exists.id }, data: { queuePosition: pos } });
     else {
-      await prisma.manual.create({ data: { messageId, plannedMonth: month, stage: "PLANNED", source: "portal" } });
+      await prisma.manual.create({ data: { messageId, queuePosition: pos, stage: "PLANNED", source: "portal" } });
       added++;
     }
   }
   return added;
 }
 
-// Gives this month's free Saturdays to the lined-up messages, oldest sermon first. Each gets
+// The queue in the order given (ids of lined-up manuals).
+export async function reorderQueue(ids: string[]) {
+  await prisma.$transaction(ids.map((id, i) => prisma.manual.updateMany({ where: { id, ...LINED_UP }, data: { queuePosition: i + 1 } })));
+}
+
+export async function removeFromQueue(id: string) {
+  await prisma.manual.deleteMany({ where: { id, ...LINED_UP } });
+}
+
+// Gives this month's free Saturdays to the lined-up messages, from the top of the queue. Each gets
 // the next manual number and the month's team as writers; the writers then confirm how many
 // manuals it makes.
 export async function fillMonth(month: string): Promise<{ planned: number; free: number }> {
@@ -77,10 +90,9 @@ export async function fillMonth(month: string): Promise<{ planned: number; free:
   const free = saturdays.filter((d) => !taken.some((t) => t.saturday!.getTime() === d.getTime()));
   if (!free.length) return { planned: 0, free: 0 };
   const lined = await prisma.manual.findMany({
-    where: { ...LINED_UP, plannedMonth: { lte: month }, messageId: { not: null } },
-    include: { message: { select: { date: true } } },
+    where: { ...LINED_UP, messageId: { not: null } },
+    orderBy: QUEUE_ORDER,
   });
-  lined.sort((a, b) => (a.message?.date?.getTime() ?? 0) - (b.message?.date?.getTime() ?? 0));
   const { teams, rotation } = await gloryConfig();
   const writers = defaultWriters(teamFor(month, teams, rotation));
   let planned = 0;
@@ -98,6 +110,7 @@ export async function fillMonth(month: string): Promise<{ planned: number; free:
         number,
         code: manualCode(number),
         plannedMonth: null,
+        queuePosition: null,
         seriesId: l.id,
         partsConfirmed: false,
         membersWriter: l.membersWriter ?? writers.membersWriter,

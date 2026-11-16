@@ -11,7 +11,7 @@ import { TONE_TEXT, TONE_DOT, DocIcon } from "@/components/glory/bits";
 import StageSelect from "@/components/glory/StageSelect";
 import PartsControl from "@/components/glory/PartsControl";
 import { makeDocs, linkManualMessage, deleteManual, outlineMessage, checkProgress } from "@/app/actions/glory";
-import { manualCode, nextStep, monthLabel, writingProgress, partsUrgent, type Stage } from "@/lib/glory";
+import { manualCode, nextStep, writingProgress, partsUrgent, type Stage } from "@/lib/glory";
 import type { MessageSection } from "@/lib/gemini";
 import { formatDate, isoDay } from "@/lib/dates";
 import { STATUS } from "@/lib/status";
@@ -42,11 +42,11 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
 
   return (
     <>
-      <Link href={lined ? "/glory-home/manuals?show=lined" : "/glory-home/manuals"} className="inline-flex items-center gap-1.5 self-start text-sm text-muted hover:text-ink">
-        <ArrowLeft aria-hidden size={16} /> All manuals
+      <Link href={lined ? "/glory-home" : "/glory-home/manuals"} className="inline-flex items-center gap-1.5 self-start text-sm text-muted hover:text-ink">
+        <ArrowLeft aria-hidden size={16} /> {lined ? "Calendar" : "All manuals"}
       </Link>
       <div className="flex flex-col gap-2">
-        <span className="eyebrow">{lined ? `Lined up${m.plannedMonth ? ` for ${monthLabel(m.plannedMonth)}` : ""}` : (manualCode(m.number) ?? "Glory Home manual")}</span>
+        <span className="eyebrow">{lined ? "Lined up" : (manualCode(m.number) ?? "Glory Home manual")}</span>
         <h1 className="font-display text-4xl leading-[1.05] font-semibold sm:text-5xl">{lined ? (m.message?.title ?? m.sourceTitle ?? "A sermon") : m.title || "Topic not set yet"}</h1>
         <p className="text-base text-muted">
           {[m.saturday ? `Saturday ${formatDate(m.saturday)}` : null, m.parts && m.parts > 1 ? `Part ${m.part} of ${m.parts}` : null, [m.membersWriter, m.guideWriter !== m.membersWriter ? m.guideWriter : null].filter(Boolean).join(" & ") || null]

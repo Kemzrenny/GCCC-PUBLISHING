@@ -11,12 +11,12 @@ import ManualCard, { DayBlock } from "@/components/glory/ManualCard";
 import PlanPanel from "@/components/glory/PlanPanel";
 import LineUpPanel from "@/components/glory/LineUpPanel";
 import GloryTabs from "@/components/glory/GloryTabs";
-import { TONE_DOT } from "@/components/glory/bits";
-import { monthView, thisWeek, linedUp, currentMonth, lagosToday, needsProgressCheck } from "@/lib/glory-data";
+import LinedUpQueue from "@/components/glory/LinedUpQueue";
+import { monthView, linedUp, currentMonth, lagosToday, needsProgressCheck } from "@/lib/glory-data";
 import { nextToLineUp } from "@/lib/glory-lineup";
 import { readLog } from "@/lib/glory-series";
 import { readProgress } from "@/lib/glory-drive";
-import { addMonths, isMonthKey, monthLabel, monthName, monthKey, folderPath } from "@/lib/glory";
+import { addMonths, isMonthKey, monthLabel, monthName, folderPath } from "@/lib/glory";
 import { formatDate } from "@/lib/dates";
 import { STATUS } from "@/lib/status";
 import { planDefaults, fillSaturdays, type MessagePick } from "@/app/actions/glory";
@@ -37,18 +37,17 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
   const lineUpId = one(sp.lineup) ?? null;
   const showLineUp = one(sp.add) === "1" && canEdit;
 
-  const [view, week, lined, templates, log] = await Promise.all([
+  const [view, lined, templates, log, manualCount] = await Promise.all([
     monthView(key),
-    thisWeek(),
-    linedUp(key),
+    linedUp(),
     getSettings(["gloryTemplateMembers", "gloryTemplateGuide"]),
     readLog(),
+    prisma.manual.count({ where: { NOT: { saturday: null, number: null, stage: "PLANNED" } } }),
   ]);
   const empty = view.weeks.filter((w) => !w.manual && w.saturday.getTime() >= today.getTime()).length;
   const monthHref = (k: string, extra = "") => `/glory-home?m=${k}${extra}`;
   const nextSat = view.weeks.find((w) => w.saturday.getTime() >= today.getTime())?.saturday.getTime();
   const nextKey = addMonths(key, 1);
-  const linedHere = lined.filter((l) => l.plannedMonth && l.plannedMonth <= key);
 
   // Who has been writing: read the documents again if it's been a while.
   const stale = needsProgressCheck(view.weeks.map((w) => w.manual));
@@ -86,9 +85,10 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
 
   return (
     <>
-      <PageHeading eyebrow="Glory Home" title="A manual every Saturday.">
-        <GloryTabs active="month" />
-      </PageHeading>
+      <div className="flex flex-col gap-4">
+        <PageHeading eyebrow="Glory Home" title="A manual every Saturday." />
+        <GloryTabs active="month" counts={{ manuals: manualCount }} />
+      </div>
 
       <section aria-label="Month" className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl bg-banner px-5 py-4">
         <div className="flex items-center gap-2">
@@ -139,77 +139,34 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
           })}
         </div>
 
-        <aside aria-label="To do" className="flex max-w-full flex-[1_1_320px] flex-col gap-4">
-          <section className="card flex flex-col gap-2 p-5">
-            <h2 className="font-display text-lg font-semibold">To do</h2>
-            {week.length === 0 ? (
-              <p className="text-sm text-muted">Nothing due in the next three weeks.</p>
-            ) : (
-              <ul className="flex flex-col">
-                {week.slice(0, 6).map((t, i) => (
-                  <li key={i} className="flex gap-3 border-t border-line py-2.5">
-                    <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${TONE_DOT[t.tone]}`} />
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      {t.manualId ? (
-                        <Link href={`/glory-home/manuals/${t.manualId}`} className="text-sm font-medium hover:underline">
-                          {t.title}
-                        </Link>
-                      ) : t.plan && canEdit ? (
-                        <Link href={monthHref(monthKey(new Date(`${t.plan}T00:00:00Z`)), `&plan=${t.plan}`)} scroll={false} className="text-sm font-medium hover:underline">
-                          {t.title}
-                        </Link>
-                      ) : (
-                        <span className="text-sm font-medium">{t.title}</span>
-                      )}
-                      <span className="text-[13px] text-muted">{t.detail}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
+        <aside aria-label="Lined up" className="flex max-w-full flex-[1_1_320px] flex-col gap-4">
           <section className="card flex flex-col gap-3 p-5">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold">Lined up{linedHere.length ? ` (${linedHere.length})` : ""}</h2>
+              <h2 className="font-display text-lg font-semibold">Lined up{lined.length ? ` (${lined.length})` : ""}</h2>
               {canEdit && (
                 <Link href={monthHref(key, "&add=1")} scroll={false} className="btn-quiet h-9 gap-1.5 px-3 text-[13px]">
                   <ListPlus aria-hidden size={16} /> Line up next
                 </Link>
               )}
             </div>
-            {linedHere.length === 0 ? (
-              <p className="text-sm text-muted">Nothing lined up for {monthName(key)}. Line up the next messages, then give them this month’s Saturdays.</p>
+            {lined.length === 0 ? (
+              <p className="text-sm text-muted">Nothing lined up. Line up the next messages, then give them the free Saturdays.</p>
             ) : (
               <>
-                <ul className="flex flex-col">
-                  {linedHere.slice(0, 6).map((l) => (
-                    <li key={l.id} className="flex flex-col gap-0.5 border-t border-line py-2">
-                      {l.message ? (
-                        <Link href={`/messages/${l.message.id}`} className="truncate text-sm font-medium hover:underline">
-                          {l.message.title}
-                        </Link>
-                      ) : (
-                        <Link href={`/glory-home/manuals/${l.id}`} className="truncate text-sm font-medium hover:underline">
-                          {l.sourceTitle ?? "A sermon not in the library yet"}
-                        </Link>
-                      )}
-                      <span className="text-xs text-muted">
-                        {[l.message ? formatDate(l.message.date) : null, l.message?.location, l.plannedMonth && l.plannedMonth < key ? "from an earlier month" : null, l.message ? STATUS[l.message.status].label : "Not matched"]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {linedHere.length > 6 && (
-                  <Link href="/glory-home/manuals?show=lined" className="text-[13px] font-medium text-accent hover:underline">
-                    See all {linedHere.length}
-                  </Link>
-                )}
+                <p className="-mt-1 text-xs text-muted">In the order they’ll get Saturdays.</p>
+                <LinedUpQueue
+                  key={lined.map((l) => l.id).join(",")}
+                  canEdit={canEdit}
+                  rows={lined.map((l) => ({
+                    id: l.id,
+                    title: l.message?.title ?? l.sourceTitle ?? "A sermon not in the library yet",
+                    href: l.message ? `/messages/${l.message.id}` : `/glory-home/manuals/${l.id}`,
+                    meta: [l.message ? formatDate(l.message.date) : null, l.message?.location, l.message ? STATUS[l.message.status].label : "Not matched"].filter(Boolean).join(" · "),
+                  }))}
+                />
                 {canEdit && empty > 0 && (
                   <ActionButton action={fillSaturdays.bind(null, key)} className="btn-primary h-10 text-[13px]" pendingLabel="Planning…">
-                    Give them {monthName(key)}’s {Math.min(empty, linedHere.length)} free Saturday{Math.min(empty, linedHere.length) === 1 ? "" : "s"}
+                    Plan the top {Math.min(empty, lined.length)} into {monthName(key)}’s free Saturday{Math.min(empty, lined.length) === 1 ? "" : "s"}
                   </ActionButton>
                 )}
               </>
@@ -255,8 +212,6 @@ export default async function GloryHomePage({ searchParams }: PageProps<"/glory-
           next={lineup.next.map(toRow)}
           skipped={lineup.skipped.map(toRow)}
           skippedCount={lineup.skippedCount}
-          months={[0, 1, 2].map((i) => addMonths(key, i)).map((k) => ({ key: k, label: monthLabel(k) }))}
-          defaultMonth={key}
           closeHref={monthHref(key)}
         />
       )}

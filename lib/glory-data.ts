@@ -9,6 +9,13 @@ const DAY = 86_400_000;
 // A message chosen for a month's team, not given a Saturday or number yet.
 export const LINED_UP: Prisma.ManualWhereInput = { saturday: null, number: null, stage: "PLANNED" };
 
+// The queue's order: as arranged, then by the day each message was preached.
+export const QUEUE_ORDER: Prisma.ManualOrderByWithRelationInput[] = [
+  { queuePosition: { sort: "asc", nulls: "last" } },
+  { message: { date: { sort: "asc", nulls: "last" } } },
+  { createdAt: "asc" },
+];
+
 export const manualInclude = {
   message: { select: { id: true, title: true, date: true, speaker: true, status: true, location: true } },
 } satisfies Prisma.ManualInclude;
@@ -71,17 +78,9 @@ export async function thisWeek(now = new Date()): Promise<WeekItem[]> {
   return items.sort((a, b) => a.at - b.at).map(({ at, ...rest }) => (void at, rest));
 }
 
-// Messages lined up for a month (no Saturday yet): this month's and next month's, plus any
-// left over from earlier months.
-export async function linedUp(key: string) {
-  const next = addMonths(key, 1);
-  const rows = await prisma.manual.findMany({
-    where: { ...LINED_UP, plannedMonth: { lte: next } },
-    include: manualInclude,
-    orderBy: [{ plannedMonth: "desc" }, { createdAt: "asc" }],
-    take: 30,
-  });
-  return rows;
+// The lined-up queue: messages chosen, no Saturday yet.
+export async function linedUp() {
+  return prisma.manual.findMany({ where: LINED_UP, include: manualInclude, orderBy: QUEUE_ORDER, take: 60 });
 }
 
 export function currentMonth(now = new Date()) {
@@ -91,12 +90,11 @@ export function currentMonth(now = new Date()) {
 // ---- All manuals ----
 
 export const MANUALS_PER_PAGE = 30;
-export type ManualFilter = { show: "all" | "message" | "docs" | "lined"; year: string; writer: string; q: string; page: number };
+export type ManualFilter = { show: "all" | "message" | "docs"; year: string; writer: string; q: string; page: number };
 
 export function manualWhere(f: ManualFilter): Prisma.ManualWhereInput {
   const and: Prisma.ManualWhereInput[] = [];
-  if (f.show === "lined") and.push(LINED_UP);
-  else and.push({ NOT: LINED_UP });
+  and.push({ NOT: LINED_UP });
   if (f.show === "message") and.push({ messageId: null });
   // Either document isn't in the Glory Home folder yet (even if an older copy is linked).
   if (f.show === "docs") and.push({ OR: [{ membersDocId: null }, { guideDocId: null }] });
@@ -127,7 +125,7 @@ export async function manualList(f: ManualFilter) {
     prisma.manual.findMany({
       where,
       include: manualInclude,
-      orderBy: f.show === "lined" ? [{ plannedMonth: { sort: "desc", nulls: "last" } }] : [{ saturday: { sort: "desc", nulls: "last" } }, { number: { sort: "desc", nulls: "last" } }],
+      orderBy: [{ saturday: { sort: "desc", nulls: "last" } }, { number: { sort: "desc", nulls: "last" } }],
       skip: (f.page - 1) * MANUALS_PER_PAGE,
       take: MANUALS_PER_PAGE,
     }),
@@ -136,7 +134,6 @@ export async function manualList(f: ManualFilter) {
       prisma.manual.count({ where: manualWhere({ ...f, show: "all", page: 1 }) }),
       prisma.manual.count({ where: manualWhere({ ...f, show: "message", page: 1 }) }),
       prisma.manual.count({ where: manualWhere({ ...f, show: "docs", page: 1 }) }),
-      prisma.manual.count({ where: manualWhere({ ...f, show: "lined", page: 1 }) }),
     ]),
     prisma.$queryRaw<{ w: string }[]>`SELECT DISTINCT w FROM (SELECT "membersWriter" AS w FROM "Manual" UNION SELECT "guideWriter" FROM "Manual") x WHERE w IS NOT NULL ORDER BY w`,
     prisma.$queryRaw<{ y: number }[]>`SELECT DISTINCT EXTRACT(YEAR FROM "saturday")::int AS y FROM "Manual" WHERE "saturday" IS NOT NULL ORDER BY y DESC`,
@@ -145,7 +142,7 @@ export async function manualList(f: ManualFilter) {
     rows,
     total,
     pages: Math.max(1, Math.ceil(total / MANUALS_PER_PAGE)),
-    counts: { all: counts[0], message: counts[1], docs: counts[2], lined: counts[3] },
+    counts: { all: counts[0], message: counts[1], docs: counts[2] },
     writers: writers.map((w) => w.w),
     years: years.map((y) => y.y),
   };

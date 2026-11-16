@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/auth";
 import { markSheetDirty, setSetting, getSettings } from "@/lib/settings";
 import { createManualDocs, shareWithTeam, retitleManualDocs, readProgress } from "@/lib/glory-drive";
 import { changeParts, previewNew, previewParts, describe, defaultWriters, logChange } from "@/lib/glory-series";
-import { lineUp, fillMonth } from "@/lib/glory-lineup";
+import { lineUp, fillMonth, reorderQueue, removeFromQueue } from "@/lib/glory-lineup";
 import { outlineSections, geminiConfigured } from "@/lib/gemini";
 import { gloryConfig } from "@/lib/glory-config";
 import { STAGES, nextStage, manualCode, monthKey, teamFor, isMonthKey, shortDay, type Stage } from "@/lib/glory";
@@ -167,19 +167,41 @@ export async function previewSetParts(manualId: string, total: number): Promise<
 
 // ---- Lining up ----
 
-export async function lineUpNext(messageIds: string[], month: string, transcribe: boolean): Promise<ActionResult> {
+export async function lineUpNext(messageIds: string[], transcribe: boolean): Promise<ActionResult> {
   try {
     await requireUser([...WRITERS]);
-    if (!isMonthKey(month)) return { error: "Pick a month." };
     if (!messageIds.length) return { error: "Tick the messages to line up." };
-    const added = await lineUp(messageIds.slice(0, 40), month);
+    const ids = messageIds.slice(0, 40);
+    await lineUp(ids);
     let queued = 0;
     if (transcribe) {
-      queued = await enqueue(messageIds, {});
+      queued = await enqueue(ids, {});
       if (queued) after(kickRunner);
     }
     refresh();
-    return { ok: `Lined up ${added || messageIds.length} message${(added || messageIds.length) === 1 ? "" : "s"}.${queued ? ` Transcribing ${queued} of them.` : ""}` };
+    return { ok: `Lined up ${ids.length} message${ids.length === 1 ? "" : "s"}.${queued ? ` Transcribing ${queued} of them.` : ""}` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function reorderLinedUp(ids: string[]): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    await reorderQueue(ids.slice(0, 200));
+    refresh();
+    return { ok: "Order saved." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function removeLinedUp(id: string): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    await removeFromQueue(id);
+    refresh();
+    return { ok: "Removed." };
   } catch (err) {
     return fail(err);
   }
@@ -362,14 +384,11 @@ export async function deleteManual(id: string): Promise<ActionResult> {
   redirect("/glory-home/manuals");
 }
 
-// Lines a message up for a month's team without a Saturday yet.
-export async function lineUpMessage(messageId: string, month: string): Promise<ActionResult> {
+// Adds one message to the end of the lined-up queue (from the message's page).
+export async function lineUpMessage(messageId: string): Promise<ActionResult> {
   try {
     await requireUser([...WRITERS]);
-    if (!isMonthKey(month)) return { error: "Pick a month." };
-    const exists = await prisma.manual.findFirst({ where: { messageId, saturday: null, number: null } });
-    if (exists) await prisma.manual.update({ where: { id: exists.id }, data: { plannedMonth: month } });
-    else await prisma.manual.create({ data: { messageId, plannedMonth: month, stage: "PLANNED", source: "portal" } });
+    await lineUp([messageId]);
     refresh();
     return { ok: "Lined up." };
   } catch (err) {

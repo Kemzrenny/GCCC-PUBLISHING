@@ -47,7 +47,6 @@ export default function ManualForm({ id, values, ownMembers, ownGuide, writers }
         {field("membersWriter", "Members Manual by", { list: "mf-writers" })}
         {field("guideWriter", "Teacher’s Guide by", { list: "mf-writers" })}
       </div>
-      {!values.saturday && field("plannedMonth", "Lined up for (YYYY-MM)", { placeholder: "2026-12" })}
       {(!ownMembers || !ownGuide) && (
         <div className="grid gap-4 sm:grid-cols-2">
           {!ownMembers && field("membersUrl", "Members Manual link (an older copy)", { type: "url", placeholder: "https://docs.google.com/…" })}
