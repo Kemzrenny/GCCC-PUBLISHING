@@ -12,6 +12,8 @@ import {
 import { enqueue } from "@/lib/jobs";
 import { getSetting, setSetting, markSheetDirty } from "@/lib/settings";
 import { speakerResolver } from "@/lib/speakers";
+import { branchFor } from "@/lib/branches";
+import { branchConfig } from "@/lib/branch-config";
 import { titleKnown } from "@/lib/needs";
 import { findDateInText, lagosDay, looksLikeFuture } from "@/lib/dates";
 
@@ -56,6 +58,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
   const episodes = parseFeed(await res.text());
 
   const speakerOf = await speakerResolver();
+  const branches = await branchConfig();
   const result: PodbeanResult = { checked: episodes.length, added: 0, linked: 0, needsDetails: 0, queued: 0, resolved: 0 };
   const newIds: string[] = [];
   // Descriptions aren't stored, so keep this run's for finding dates.
@@ -111,7 +114,7 @@ export async function checkPodbean(): Promise<PodbeanResult> {
         date: parsed.date ?? (ep.pubDate ? lagosDay(ep.pubDate) : null),
         dateFromUpload: !parsed.date && !!ep.pubDate,
         speaker: speakerOf(parsed.speaker),
-        location: process.env.DEFAULT_LOCATION ?? null,
+        location: branchFor({ title: ep.title, description: ep.description, date: parsed.date ?? null, speaker: speakerOf(parsed.speaker) }, branches),
         needsDetails: true,
       },
     });
@@ -225,8 +228,9 @@ async function resolveWaiting(
 
   const waiting = await prisma.message.findMany({
     where: { needsDetails: true, detailsLocked: false },
-    select: { id: true, title: true, podbeanTitle: true, podbeanPublishedAt: true, date: true, dateFromUpload: true, speaker: true, sourceUrl: true },
+    select: { id: true, title: true, podbeanTitle: true, podbeanPublishedAt: true, date: true, dateFromUpload: true, speaker: true, sourceUrl: true, location: true },
   });
+  const branches = await branchConfig();
   const report: WaitingReport = {
     waiting: 0,
     notOnPodbean: 0,
@@ -264,6 +268,12 @@ async function resolveWaiting(
     if (title !== m.title) data.title = title;
     if (date && (date.getTime() !== m.date?.getTime() || fromUpload !== m.dateFromUpload)) Object.assign(data, { date, dateFromUpload: fromUpload });
     if (!m.speaker && parsed?.speaker) data.speaker = speakerOf(parsed.speaker);
+    // With the date and speaker settled, the branch rules can be applied properly.
+    const branch = branchFor(
+      { title: m.podbeanTitle ?? m.title, description: descriptions.get(m.id), date: (data.date as Date | undefined) ?? m.date, speaker: (data.speaker as string | undefined) ?? m.speaker },
+      branches,
+    );
+    if (branch !== m.location) data.location = branch;
     if (known && date) {
       data.needsDetails = false;
       if (!newSet.has(m.id)) result.resolved++;

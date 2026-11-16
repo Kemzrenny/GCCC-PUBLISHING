@@ -11,6 +11,7 @@ const NAMES: Record<string, string> = {
   speakers: "Speakers",
   connections: "Connections",
   team: "Team",
+  branches: "Branches",
   import: "Import",
 };
 

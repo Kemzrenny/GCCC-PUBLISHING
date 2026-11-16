@@ -74,7 +74,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="font-display text-2xl font-semibold">{query.q ? `Results for “${query.q}”` : "Messages"}</h2>
           <Suspense>
-            <LibraryFilters speakers={stats.speakers} years={stats.years} />
+            <LibraryFilters speakers={stats.speakers} branches={stats.branches} years={stats.years} />
           </Suspense>
         </div>
         {query.speaker && speakerReady > 0 && (
@@ -117,7 +117,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/library"
                       <td className="border-b border-line py-4 pr-3">
                         <Link href={`/messages/${m.id}`} className="text-[15px] font-medium hover:underline">{m.title}</Link>
                         <div className={`mt-1 text-[13px] ${m.needsDetails ? "text-alert" : "text-muted"}`}>
-                          {m.needsDetails ? "Needs its details confirmed" : [m.series, m.location?.split(",")[0]].filter(Boolean).join(" · ")}
+                          {m.needsDetails ? "Needs its details confirmed" : [m.series, m.location].filter(Boolean).join(" · ")}
                         </div>
                       </td>
                       <td className="border-b border-line px-3 py-4 text-sm whitespace-nowrap text-muted">{m.speaker ?? "—"}</td>

@@ -6,7 +6,7 @@ import { getSetting } from "@/lib/settings";
 
 export const PAGE_SIZE = 25;
 
-export type LibraryQuery = { q?: string; tab?: string; speaker?: string; year?: string; page?: string };
+export type LibraryQuery = { q?: string; tab?: string; speaker?: string; branch?: string; year?: string; page?: string };
 
 export function readQuery(sp: Record<string, string | string[] | undefined>): Required<LibraryQuery> {
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
@@ -16,6 +16,7 @@ export function readQuery(sp: Record<string, string | string[] | undefined>): Re
     q: one(sp.q).slice(0, 200),
     tab: TABS.some((t) => t.key === tab) ? tab : "all",
     speaker: one(sp.speaker),
+    branch: one(sp.branch).slice(0, 120),
     year: /^\d{4}$/.test(one(sp.year)) ? one(sp.year) : "",
     page: /^\d+$/.test(one(sp.page)) ? one(sp.page) : "1",
   };
@@ -42,6 +43,7 @@ function where(q: Required<LibraryQuery>): Prisma.MessageWhereInput {
   if (tab === "dates") and.push({ OR: [{ needsDetails: true }, { dateFromUpload: true }] });
   else if (tab !== "all") and.push({ status: { in: TAB_STATUSES[tab] } });
   if (q.speaker) and.push({ speaker: q.speaker });
+  if (q.branch) and.push(q.branch === "none" ? { location: null } : { location: q.branch });
   if (q.year) {
     const y = Number(q.year);
     and.push({ date: { gte: new Date(Date.UTC(y, 0, 1)), lt: new Date(Date.UTC(y + 1, 0, 1)) } });
@@ -80,7 +82,7 @@ export async function libraryPage(q: Required<LibraryQuery>) {
 }
 
 export async function libraryStats() {
-  const [total, approved, inProgress, needsDetails, linkedManuals, manualsWritten, speakers, years] = await Promise.all([
+  const [total, approved, inProgress, needsDetails, linkedManuals, manualsWritten, speakers, branches, years] = await Promise.all([
     prisma.message.count(),
     prisma.message.count({ where: { status: "APPROVED" } }),
     prisma.message.count({ where: { status: { in: ["QUEUED", "TRANSCRIBING", "AI_DRAFT", "IN_REVIEW"] } } }),
@@ -88,6 +90,7 @@ export async function libraryStats() {
     prisma.message.count({ where: { manuals: { some: {} } } }),
     getSetting("manualsWritten"),
     prisma.message.groupBy({ by: ["speaker"], _count: { _all: true }, orderBy: { _count: { speaker: "desc" } }, take: 200 }),
+    prisma.message.groupBy({ by: ["location"], _count: { _all: true }, orderBy: { _count: { location: "desc" } }, take: 50 }),
     prisma.$queryRaw<{ year: number }[]>`SELECT DISTINCT EXTRACT(YEAR FROM "date")::int AS year FROM "Message" WHERE "date" IS NOT NULL ORDER BY year DESC`,
   ]);
   return {
@@ -99,6 +102,7 @@ export async function libraryStats() {
     linkedManuals,
     manualsWritten: Number(manualsWritten) || 0,
     speakers: speakers.map((s) => s.speaker).filter((s): s is string => !!s),
+    branches: branches.map((b) => b.location).filter((b): b is string => !!b),
     years: years.map((y) => y.year),
   };
 }

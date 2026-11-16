@@ -204,3 +204,26 @@ export function docTitle(kind: "members" | "guide", m: { number: number | null; 
 export function longDate(d: Date): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
+
+// ---- Writing progress, from the documents ----
+
+type Progress = { membersDocId: string | null; guideDocId: string | null; membersUrl?: string | null; guideUrl?: string | null; membersEditedAt: Date | null; membersEditedBy: string | null; guideEditedAt: Date | null; guideEditedBy: string | null };
+
+export function writingProgress(m: Progress, now = new Date()): { label: string; started: boolean } {
+  if (!m.membersDocId && !m.guideDocId) return { label: m.membersUrl || m.guideUrl ? "Older documents linked" : "No documents yet", started: false };
+  const edits = [
+    m.membersEditedAt ? { at: m.membersEditedAt, by: m.membersEditedBy } : null,
+    m.guideEditedAt ? { at: m.guideEditedAt, by: m.guideEditedBy } : null,
+  ].filter((e): e is { at: Date; by: string | null } => !!e);
+  if (!edits.length) return { label: "Not started", started: false };
+  const last = edits.sort((a, b) => b.at.getTime() - a.at.getTime())[0];
+  const days = Math.floor((now.getTime() + 3_600_000) / DAY) - Math.floor((last.at.getTime() + 3_600_000) / DAY);
+  const when = days <= 0 ? "today" : days === 1 ? "yesterday" : days < 7 ? `on ${SHORT_DAYS[new Date(last.at.getTime() + 3_600_000).getUTCDay()]}` : `${days} days ago`;
+  return { label: `Edited ${when}${last.by ? ` by ${last.by.split(" ")[0]}` : ""}`, started: true };
+}
+
+// The parts question is urgent once the Monday review is a week or less away.
+export function partsUrgent(saturday: Date | null, now = new Date()): boolean {
+  if (!saturday) return false;
+  return deadlines(saturday).review.getTime() - now.getTime() < 7 * DAY;
+}

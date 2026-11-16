@@ -9,10 +9,11 @@ type Props = {
   suggestedTitle?: string | null;
   podbeanTitle?: string | null;
   speakers: string[];
+  branches?: string[];
   compact?: boolean;
 };
 
-export default function DetailsForm({ messageId, initial, suggestedTitle, podbeanTitle, speakers, compact }: Props) {
+export default function DetailsForm({ messageId, initial, suggestedTitle, podbeanTitle, speakers, branches = [], compact }: Props) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(saveDetails.bind(null, messageId), null);
   const listId = `speakers-${messageId}`;
   return (
@@ -46,8 +47,9 @@ export default function DetailsForm({ messageId, initial, suggestedTitle, podbea
           <input className="field" id={`series-${messageId}`} name="series" defaultValue={initial.series} />
         </div>
         <div className={compact ? "" : "sm:col-span-2"}>
-          <label className="label" htmlFor={`location-${messageId}`}>Location</label>
-          <input className="field" id={`location-${messageId}`} name="location" defaultValue={initial.location} placeholder="Ojodu, Lagos, Nigeria" />
+          <label className="label" htmlFor={`location-${messageId}`}>Branch</label>
+          <input className="field" id={`location-${messageId}`} name="location" defaultValue={initial.location} placeholder="Where it was preached, e.g. Ojodu" list={`branches-${messageId}`} />
+          <datalist id={`branches-${messageId}`}>{branches.map((b) => <option key={b} value={b} />)}</datalist>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">

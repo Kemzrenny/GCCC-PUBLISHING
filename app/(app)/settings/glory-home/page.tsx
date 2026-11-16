@@ -7,14 +7,16 @@ import { Chip } from "@/components/ui";
 import { Section, Row } from "@/components/settings/Section";
 import TemplateUpload from "@/components/glory/TemplateUpload";
 import TeamsForm from "@/components/glory/TeamsForm";
-import { ManualsWrittenForm } from "@/components/SettingsForms";
+import { ManualsWrittenForm, GlorySpeakerForm } from "@/components/SettingsForms";
+import { prisma } from "@/lib/prisma";
 
 export const metadata = { title: "Settings · Glory Home" };
 
 export default async function GlorySettingsPage() {
-  const [s, glory] = await Promise.all([
-    getSettings(["driveRefreshToken", "driveAccount", "gloryRootFolderId", "gloryTemplateMembers", "gloryTemplateGuide", "manualsWritten"]),
+  const [s, glory, speakers] = await Promise.all([
+    getSettings(["driveRefreshToken", "driveAccount", "gloryRootFolderId", "gloryTemplateMembers", "gloryTemplateGuide", "manualsWritten", "glorySpeaker"]),
     gloryConfig(),
+    prisma.message.groupBy({ by: ["speaker"], _count: { _all: true }, orderBy: { _count: { speaker: "desc" } }, take: 40 }),
   ]);
   const driveOn = driveClientConfigured() && !!s.driveRefreshToken;
   const templates = [s.gloryTemplateMembers, s.gloryTemplateGuide].filter(Boolean).length;
@@ -70,6 +72,12 @@ export default async function GlorySettingsPage() {
         )}
         <Row title="Count" hint="The total shown in the library, including manuals from before the portal.">
           <ManualsWrittenForm value={s.manualsWritten} />
+        </Row>
+      </Section>
+
+      <Section title="Messages" description="“Line up the next messages” goes through this speaker’s messages in the order they were preached, after the last one used for a manual.">
+        <Row title="Written from">
+          <GlorySpeakerForm value={s.glorySpeaker} speakers={speakers.map((x) => x.speaker).filter((x): x is string => !!x)} />
         </Row>
       </Section>
 

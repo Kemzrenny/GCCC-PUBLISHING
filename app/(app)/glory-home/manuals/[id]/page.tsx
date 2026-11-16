@@ -7,9 +7,12 @@ import { getSettings } from "@/lib/settings";
 import ActionButton from "@/components/ActionButton";
 import ManualForm from "@/components/glory/ManualForm";
 import MatchMessage from "@/components/glory/MatchMessage";
-import { StageBar, TONE_TEXT, TONE_DOT, DocIcon } from "@/components/glory/bits";
-import { advanceManual, makeDocs, linkManualMessage, deleteManual } from "@/app/actions/glory";
-import { ADVANCE_LABEL, STAGE_LABEL, manualCode, nextStep, monthLabel, type Stage } from "@/lib/glory";
+import { TONE_TEXT, TONE_DOT, DocIcon } from "@/components/glory/bits";
+import StageSelect from "@/components/glory/StageSelect";
+import PartsControl from "@/components/glory/PartsControl";
+import { makeDocs, linkManualMessage, deleteManual, outlineMessage, checkProgress } from "@/app/actions/glory";
+import { manualCode, nextStep, monthLabel, writingProgress, partsUrgent, type Stage } from "@/lib/glory";
+import type { MessageSection } from "@/lib/gemini";
 import { formatDate, isoDay } from "@/lib/dates";
 import { STATUS } from "@/lib/status";
 
@@ -21,7 +24,7 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
   const { id } = await params;
   const m = await prisma.manual.findUnique({
     where: { id },
-    include: { message: { select: { id: true, title: true, date: true, speaker: true, status: true, transcript: { select: { driveUrl: true } } } } },
+    include: { message: { select: { id: true, title: true, date: true, speaker: true, status: true, location: true, sections: true, transcript: { select: { driveUrl: true } } } } },
   });
   if (!m) notFound();
   const [templates, writers, siblings] = await Promise.all([
@@ -32,7 +35,9 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
   const stage = m.stage as Stage;
   const lined = !m.saturday && !m.number;
   const step = nextStep(stage, m.saturday);
-  const advance = ADVANCE_LABEL[stage];
+  const progress = writingProgress(m);
+  const sections = (m.message?.sections as MessageSection[] | null) ?? null;
+  const transcribed = m.message && m.message.status !== "NOT_STARTED" && m.message.status !== "FAILED" && m.message.status !== "TRANSCRIBING";
   const templatesReady = !!(templates.gloryTemplateMembers && templates.gloryTemplateGuide);
 
   return (
@@ -54,20 +59,25 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
         <div className="flex min-w-0 flex-col gap-6">
           {!lined && (
             <section className="card flex flex-col gap-4 p-6">
-              <StageBar stage={stage} />
-              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-                <span>
-                  <span className="font-semibold">{STAGE_LABEL[stage]}</span>
-                  <span className={`ml-3 inline-flex items-center gap-1.5 font-medium ${TONE_TEXT[step.tone]}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-col gap-1 text-sm">
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${TONE_TEXT[step.tone]}`}>
                     <span aria-hidden className={`size-2 rounded-full ${TONE_DOT[step.tone]}`} />
                     {step.label}
                   </span>
-                </span>
-                {canEdit && advance && (
-                  <ActionButton action={advanceManual.bind(null, m.id)} className="btn-primary h-10 px-4 text-[13px]" pendingLabel="Saving…">
-                    {advance}
-                  </ActionButton>
-                )}
+                  <span className="text-[13px] text-muted">
+                    Writing: <span className={progress.started ? "text-[var(--chip-green)]" : ""}>{progress.label}</span>
+                    {(m.membersDocId || m.guideDocId) && canEdit && (
+                      <>
+                        {" · "}
+                        <ActionButton action={checkProgress.bind(null, [m.id])} className="inline font-medium text-accent hover:underline" pendingLabel="Checking…" inlineResult={false}>
+                          check now
+                        </ActionButton>
+                      </>
+                    )}
+                  </span>
+                </div>
+                <StageSelect id={m.id} stage={stage} canEdit={canEdit} />
               </div>
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
                 {m.membersUrl ? (
@@ -93,6 +103,42 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
             </section>
           )}
 
+          {!lined && m.messageId && m.saturday && (m.partsConfirmed || stage === "PLANNED" || stage === "WRITING") && (
+            <section className="card flex flex-col gap-4 p-6">
+              <h2 className="font-display text-xl font-semibold">How many manuals?</h2>
+              {canEdit ? (
+                <PartsControl id={m.id} parts={m.parts ?? 1} confirmed={m.partsConfirmed} urgent={partsUrgent(m.saturday)} />
+              ) : (
+                <p className="text-sm">{m.partsConfirmed ? `${m.parts ?? 1} manual${(m.parts ?? 1) === 1 ? "" : "s"} from this message.` : "Not confirmed yet."}</p>
+              )}
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-medium">To help decide: the message’s main sections</h3>
+                {sections ? (
+                  <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
+                    {sections.map((x, i) => (
+                      <li key={i}>
+                        <span className="font-medium">{x.heading}</span>
+                        <span className="text-muted"> · {x.gist}</span>
+                        {x.scriptures?.length ? <span className="block text-xs text-muted">{x.scriptures.join(", ")}</span> : null}
+                      </li>
+                    ))}
+                  </ol>
+                ) : transcribed ? (
+                  canEdit && (
+                    <div>
+                      <ActionButton action={outlineMessage.bind(null, m.messageId)} pendingLabel="Reading the transcript…">
+                        List the main sections
+                      </ActionButton>
+                    </div>
+                  )
+                ) : (
+                  <p className="text-[13px] text-muted">Available once the message is transcribed.</p>
+                )}
+                <p className="text-xs text-muted">Drafted by AI from the transcript, as a starting point. The writers decide how the message is divided.</p>
+              </div>
+            </section>
+          )}
+
           {canEdit ? (
             <section className="card flex flex-col gap-4 p-6">
               <h2 className="font-display text-xl font-semibold">Details</h2>
@@ -106,9 +152,6 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
                   number: m.number ? String(m.number) : "",
                   saturday: isoDay(m.saturday),
                   plannedMonth: m.plannedMonth ?? "",
-                  stage: m.stage,
-                  part: m.part ? String(m.part) : "",
-                  parts: m.parts ? String(m.parts) : "",
                   membersWriter: m.membersWriter ?? "",
                   guideWriter: m.guideWriter ?? "",
                   membersUrl: m.membersDocId ? "" : (m.membersUrl ?? ""),
@@ -129,7 +172,7 @@ export default async function ManualPage({ params }: PageProps<"/glory-home/manu
                   <Mic aria-hidden size={18} className="mt-0.5 shrink-0 text-muted" />
                   <div className="flex flex-col gap-0.5">
                     <Link href={`/messages/${m.message.id}`} className="font-medium hover:underline">{m.message.title}</Link>
-                    <span className="text-[13px] text-muted">{[formatDate(m.message.date), m.message.speaker, STATUS[m.message.status].label].filter(Boolean).join(" · ")}</span>
+                    <span className="text-[13px] text-muted">{[formatDate(m.message.date), m.message.speaker, m.message.location, STATUS[m.message.status].label].filter(Boolean).join(" · ")}</span>
                   </div>
                 </div>
                 {m.message.transcript?.driveUrl && (

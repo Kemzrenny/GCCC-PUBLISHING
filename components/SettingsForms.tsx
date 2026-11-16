@@ -215,3 +215,25 @@ export function MemberRow({ id, name, email, role, disabled, isMe }: { id: strin
     </li>
   );
 }
+
+// Whose messages "Line up the next messages" works through.
+export function GlorySpeakerForm({ value, speakers }: { value: string; speakers: string[] }) {
+  const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
+  return (
+    <form onSubmit={keepValues(action)} className="flex flex-wrap items-end gap-3">
+      <div className="min-w-64 flex-1">
+        <label className="label" htmlFor="glorySpeaker">Speaker</label>
+        <select id="glorySpeaker" name="glorySpeaker" className="field" defaultValue={value}>
+          {!speakers.includes(value) && value && <option value={value}>{value}</option>}
+          {speakers.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button className="btn-quiet" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
+      <Result state={state} />
+    </form>
+  );
+}

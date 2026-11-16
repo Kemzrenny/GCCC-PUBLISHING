@@ -7,9 +7,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { markSheetDirty, setSetting, getSettings } from "@/lib/settings";
-import { createManualDocs, shareWithTeam } from "@/lib/glory-drive";
+import { createManualDocs, shareWithTeam, retitleManualDocs, readProgress } from "@/lib/glory-drive";
+import { changeParts, previewNew, previewParts, describe, defaultWriters, logChange } from "@/lib/glory-series";
+import { lineUp, fillMonth } from "@/lib/glory-lineup";
+import { outlineSections, geminiConfigured } from "@/lib/gemini";
 import { gloryConfig } from "@/lib/glory-config";
-import { STAGES, nextStage, manualCode, monthKey, teamFor, isMonthKey, type Stage, type Team } from "@/lib/glory";
+import { STAGES, nextStage, manualCode, monthKey, teamFor, isMonthKey, shortDay, type Stage } from "@/lib/glory";
 import { kickRunner, enqueue } from "@/lib/jobs";
 import type { ActionResult } from "@/app/actions/messages";
 
@@ -19,7 +22,7 @@ const refresh = () => revalidatePath("/", "layout");
 
 // ---- Finding a message to write from ----
 
-export type MessagePick = { id: string; title: string; date: string | null; speaker: string | null; status: string; manuals: number; audio: boolean };
+export type MessagePick = { id: string; title: string; date: string | null; speaker: string | null; branch: string | null; status: string; manuals: number; audio: boolean };
 
 export async function searchMessages(q: string): Promise<MessagePick[]> {
   await requireUser([...WRITERS]);
@@ -29,13 +32,14 @@ export async function searchMessages(q: string): Promise<MessagePick[]> {
     where: { AND: words.map((w) => ({ OR: [{ title: { contains: w, mode: "insensitive" as const } }, { speaker: { contains: w, mode: "insensitive" as const } }] })) },
     orderBy: [{ date: { sort: "desc", nulls: "last" } }],
     take: 8,
-    select: { id: true, title: true, date: true, speaker: true, status: true, audioUrl: true, sourceUrl: true, _count: { select: { manuals: true } } },
+    select: { id: true, title: true, date: true, speaker: true, location: true, status: true, audioUrl: true, sourceUrl: true, _count: { select: { manuals: true } } },
   });
   return rows.map((m) => ({
     id: m.id,
     title: m.title,
     date: m.date?.toISOString().slice(0, 10) ?? null,
     speaker: m.speaker,
+    branch: m.location,
     status: m.status,
     manuals: m._count.manuals,
     audio: !!(m.audioUrl || m.sourceUrl?.includes("podbean.com/e/")),
@@ -60,8 +64,8 @@ const planSchema = z.object({
   saturday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   messageId: z.string().min(1, "Pick the message the manual comes from."),
   number: z.coerce.number().int().min(1).max(99999),
-  part: z.coerce.number().int().min(1).max(20),
-  parts: z.coerce.number().int().min(1).max(20),
+  // 0: the writers will say how many manuals it makes.
+  parts: z.coerce.number().int().min(0).max(8),
   title: z.string().trim().max(200),
   membersWriter: z.string().trim().max(80),
   guideWriter: z.string().trim().max(80),
@@ -71,15 +75,10 @@ const planSchema = z.object({
 
 export type PlanInput = z.input<typeof planSchema>;
 
-function defaultWriters(team: Team | null) {
-  return { membersWriter: team?.members[0]?.name ?? null, guideWriter: team?.members[1]?.name ?? team?.members[0]?.name ?? null };
-}
-
 export async function planManual(input: PlanInput): Promise<{ ok?: string; error?: string; id?: string }> {
   try {
-    await requireUser([...WRITERS]);
+    const user = await requireUser([...WRITERS]);
     const p = planSchema.parse(input);
-    if (p.part > p.parts) return { error: "The part can't be more than the number of parts." };
     const saturday = new Date(`${p.saturday}T00:00:00Z`);
     if (saturday.getUTCDay() !== 6) return { error: "Glory Home manuals are for Saturdays." };
     const taken = await prisma.manual.findFirst({ where: { saturday }, select: { code: true, title: true } });
@@ -95,40 +94,18 @@ export async function planManual(input: PlanInput): Promise<{ ok?: string; error
         title: p.title || null,
         saturday,
         stage: "PLANNED",
-        part: p.parts > 1 ? p.part : null,
-        parts: p.parts > 1 ? p.parts : null,
+        partsConfirmed: p.parts > 0,
         membersWriter: p.membersWriter || null,
         guideWriter: p.guideWriter || null,
         source: "portal",
       },
     });
-    // A message lined up for the month is now planned.
-    if (p.lineUpId) await prisma.manual.deleteMany({ where: { id: p.lineUpId, saturday: null, number: null } });
+    await prisma.manual.update({ where: { id: manual.id }, data: { seriesId: manual.id } });
+    // The message was lined up: it's planned now.
+    await prisma.manual.deleteMany({ where: { OR: [{ id: p.lineUpId ?? "" }, { messageId: p.messageId }], saturday: null, number: null } });
 
-    // The other parts go on the next free Saturdays, with the next numbers, for whichever
-    // team has that month.
-    const { teams, rotation } = await gloryConfig();
-    let next = saturday;
-    let number = p.number;
-    for (let part = p.part + 1; part <= p.parts; part++) {
-      do next = new Date(next.getTime() + 7 * 86_400_000);
-      while (await prisma.manual.findFirst({ where: { saturday: next }, select: { id: true } }));
-      do number++;
-      while (await prisma.manual.findFirst({ where: { number }, select: { id: true } }));
-      await prisma.manual.create({
-        data: {
-          messageId: p.messageId,
-          number,
-          code: manualCode(number),
-          saturday: next,
-          stage: "PLANNED",
-          part,
-          parts: p.parts,
-          ...defaultWriters(teamFor(monthKey(next), teams, rotation)),
-          source: "portal",
-        },
-      });
-    }
+    let moved = "";
+    if (p.parts > 1) moved = ` ${(await changeParts(manual.id, p.parts, user.name)).note}`;
 
     let note = "";
     if (p.createDocs) {
@@ -141,9 +118,126 @@ export async function planManual(input: PlanInput): Promise<{ ok?: string; error
     }
     await markSheetDirty();
     refresh();
-    return { ok: `Planned ${manualCode(p.number)}${p.parts > p.part ? ` and the other ${p.parts - p.part} part${p.parts - p.part === 1 ? "" : "s"}` : ""}.${note}`, id: manual.id };
+    return { ok: `Planned ${manualCode(p.number)}.${moved}${note}`, id: manual.id };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong." };
+  }
+}
+
+// For the plan panel: where the other parts would go, and what would move.
+export async function previewPlan(saturday: string, number: number, parts: number): Promise<string[]> {
+  await requireUser([...WRITERS]);
+  if (parts <= 1 || !/^\d{4}-\d{2}-\d{2}$/.test(saturday)) return [];
+  const { plan, titles } = await previewNew(new Date(`${saturday}T00:00:00Z`), number, parts);
+  const lines = plan.add.map((a) => `Part ${a.part}: ${shortDay(a.saturday)}${a.number ? `, ${manualCode(a.number)}` : ""}`);
+  const moved = plan.moves.filter((m) => m.from.getTime() !== m.to.getTime());
+  if (moved.length) {
+    lines.push(
+      `${moved.length} later manual${moved.length === 1 ? " moves" : "s move"} back: ${moved
+        .map((m) => `${manualCode(m.oldNumber) ?? titles.get(m.id)?.title ?? "one"} to ${shortDay(m.to)}`)
+        .join(", ")}`,
+    );
+  }
+  return lines;
+}
+
+// The writers say how many manuals a message makes; the calendar moves to match.
+export async function setParts(manualId: string, total: number): Promise<ActionResult> {
+  try {
+    const user = await requireUser([...WRITERS]);
+    if (!Number.isInteger(total) || total < 1 || total > 8) return { error: "Pick between 1 and 8." };
+    const { note, moved } = await changeParts(manualId, total, user.name);
+    after(async () => {
+      for (const m of moved) await retitleManualDocs(m.id, { number: m.number, saturday: m.saturday }).catch(() => {});
+    });
+    refresh();
+    return { ok: note || `Confirmed: ${total} manual${total === 1 ? "" : "s"}.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function previewSetParts(manualId: string, total: number): Promise<string> {
+  await requireUser([...WRITERS]);
+  const { plan } = await previewParts(manualId, total);
+  if (plan.error) return plan.error;
+  const rows = await prisma.manual.findMany({ where: { id: { in: plan.moves.map((m) => m.id) } }, select: { id: true, number: true, title: true } });
+  return describe(plan, new Map(rows.map((r) => [r.id, r])));
+}
+
+// ---- Lining up ----
+
+export async function lineUpNext(messageIds: string[], month: string, transcribe: boolean): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    if (!isMonthKey(month)) return { error: "Pick a month." };
+    if (!messageIds.length) return { error: "Tick the messages to line up." };
+    const added = await lineUp(messageIds.slice(0, 40), month);
+    let queued = 0;
+    if (transcribe) {
+      queued = await enqueue(messageIds, {});
+      if (queued) after(kickRunner);
+    }
+    refresh();
+    return { ok: `Lined up ${added || messageIds.length} message${(added || messageIds.length) === 1 ? "" : "s"}.${queued ? ` Transcribing ${queued} of them.` : ""}` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function fillSaturdays(month: string): Promise<ActionResult> {
+  try {
+    const user = await requireUser([...WRITERS]);
+    if (!isMonthKey(month)) return { error: "Pick a month." };
+    const { planned, free } = await fillMonth(month);
+    if (!free) return { error: "This month has no free Saturdays left." };
+    if (!planned) return { error: "Nothing is lined up to plan. Line up some messages first." };
+    await logChange({ by: user.name, text: `Planned ${planned} lined-up message${planned === 1 ? "" : "s"} into ${month}'s free Saturdays.` });
+    await markSheetDirty();
+    refresh();
+    return { ok: `Planned ${planned} of ${free} free Saturday${free === 1 ? "" : "s"}. The writers confirm how many manuals each makes.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// The message's main sections, as a hint for how many manuals it makes.
+export async function outlineMessage(messageId: string): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    if (!geminiConfigured()) return { error: "Gemini isn't set up." };
+    const m = await prisma.message.findUniqueOrThrow({ where: { id: messageId }, select: { title: true, transcript: { select: { text: true } } } });
+    if (!m.transcript?.text) return { error: "Transcribe the message first." };
+    const sections = await outlineSections(m.transcript.text, { title: m.title });
+    await prisma.message.update({ where: { id: messageId }, data: { sections } });
+    refresh();
+    return { ok: `${sections.length} main section${sections.length === 1 ? "" : "s"}.` };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function setStage(id: string, stage: string): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    if (!(STAGES as readonly string[]).includes(stage)) return { error: "Pick a status." };
+    await prisma.manual.update({ where: { id }, data: { stage: stage as Stage } });
+    await markSheetDirty();
+    refresh();
+    return { ok: "Updated." };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function checkProgress(ids: string[]): Promise<ActionResult> {
+  try {
+    await requireUser([...WRITERS]);
+    await readProgress(ids.slice(0, 20));
+    refresh();
+    return { ok: "Checked the documents." };
+  } catch (err) {
+    return fail(err);
   }
 }
 
@@ -190,9 +284,6 @@ const editSchema = z.object({
   number: z.string().trim().regex(/^\d{0,5}$/, "The manual number is just digits."),
   saturday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/),
   plannedMonth: z.string().trim(),
-  stage: z.enum(STAGES),
-  part: z.string().trim().regex(/^\d{0,2}$/),
-  parts: z.string().trim().regex(/^\d{0,2}$/),
   membersWriter: z.string().trim().max(80),
   guideWriter: z.string().trim().max(80),
   membersUrl: z.string().trim().max(500),
@@ -219,6 +310,9 @@ export async function saveManual(id: string, _: ActionResult, form: FormData): P
     }
     const url = (s: string) => (s && /^https?:\/\//i.test(s) ? s : null);
     const before = await prisma.manual.findUniqueOrThrow({ where: { id } });
+    if ((before.number !== number || before.saturday?.getTime() !== saturday?.getTime()) && (before.membersDocId || before.guideDocId)) {
+      after(() => retitleManualDocs(id, { number: before.number, saturday: before.saturday }).catch(() => {}));
+    }
     await prisma.manual.update({
       where: { id },
       data: {
@@ -227,9 +321,6 @@ export async function saveManual(id: string, _: ActionResult, form: FormData): P
         code: manualCode(number),
         saturday,
         plannedMonth: saturday ? null : isMonthKey(d.plannedMonth) ? d.plannedMonth : null,
-        stage: d.stage,
-        part: d.part ? Number(d.part) : null,
-        parts: d.parts ? Number(d.parts) : null,
         membersWriter: d.membersWriter || null,
         guideWriter: d.guideWriter || null,
         // Links to our own documents stay; other links can be pasted in.

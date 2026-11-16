@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AudioLines, Plug, CalendarDays, Mic, Users, Upload } from "lucide-react";
+import { AudioLines, Plug, CalendarDays, Mic, Users, Upload, MapPin } from "lucide-react";
 
 export type NavFlags = { connections?: "alert" | null; speakers?: number; team?: number };
 
@@ -11,6 +11,7 @@ const ITEMS = [
   { href: "/settings/connections", label: "Connections", hint: "Podbean, Drive and the Sheet", icon: Plug },
   { href: "/settings/glory-home", label: "Glory Home", hint: "Templates and writing teams", icon: CalendarDays },
   { href: "/settings/speakers", label: "Speakers", hint: "Merge and rename", icon: Mic },
+  { href: "/settings/branches", label: "Branches", hint: "Where messages were preached", icon: MapPin },
   { href: "/settings/team", label: "Team", hint: "Who has access", icon: Users },
   { href: "/settings/import", label: "Import", hint: "The old Publishing sheet", icon: Upload },
 ] as const;

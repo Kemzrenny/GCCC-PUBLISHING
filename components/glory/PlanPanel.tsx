@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
-import { planManual, searchMessages, transcribeForManual, type MessagePick } from "@/app/actions/glory";
+import { planManual, previewPlan, searchMessages, transcribeForManual, type MessagePick } from "@/app/actions/glory";
 import { deadlines, shortDay, manualCode } from "@/lib/glory";
 import { STATUS } from "@/lib/status";
 import { formatDate } from "@/lib/dates";
@@ -30,8 +30,9 @@ export default function PlanPanel(p: Props) {
   const [results, setResults] = useState<MessagePick[]>([]);
   const [picked, setPicked] = useState<MessagePick | null>(p.preset);
   const [number, setNumber] = useState(String(p.defaults.number));
-  const [part, setPart] = useState("1");
-  const [parts, setParts] = useState("1");
+  // "0": the writers will say once they've looked at the message.
+  const [parts, setParts] = useState("0");
+  const [preview, setPreview] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [membersWriter, setMembersWriter] = useState(p.defaults.membersWriter ?? "");
   const [guideWriter, setGuideWriter] = useState(p.defaults.guideWriter ?? "");
@@ -54,9 +55,16 @@ export default function PlanPanel(p: Props) {
     return () => clearTimeout(t);
   }, [q, picked]);
 
+  useEffect(() => {
+    const n = Number(parts);
+    if (n <= 1) return;
+    let live = true;
+    previewPlan(p.saturday, Number(number) || 0, n).then((lines) => live && setPreview(lines)).catch(() => {});
+    return () => void (live = false);
+  }, [parts, number, p.saturday]);
+
   const sat = new Date(`${p.saturday}T00:00:00Z`);
   const d = deadlines(sat);
-  const nextSat = shortDay(new Date(sat.getTime() + 7 * 86_400_000));
   const notTranscribed = picked && (picked.status === "NOT_STARTED" || picked.status === "FAILED");
   const writers = [...new Set([...p.members, membersWriter, guideWriter].filter(Boolean))];
 
@@ -68,8 +76,7 @@ export default function PlanPanel(p: Props) {
         saturday: p.saturday,
         messageId: picked.id,
         number: Number(number),
-        part: Number(part) || 1,
-        parts: Number(parts) || 1,
+        parts: Number(parts) || 0,
         title,
         membersWriter,
         guideWriter,
@@ -111,7 +118,7 @@ export default function PlanPanel(p: Props) {
             <div className="flex items-start justify-between gap-3">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[15px] font-semibold">{picked.title}</span>
-                <span className="text-[13px] text-muted">{[formatDate(picked.date), picked.speaker].filter(Boolean).join(" · ")}</span>
+                <span className="text-[13px] text-muted">{[formatDate(picked.date), picked.speaker, picked.branch].filter(Boolean).join(" · ")}</span>
               </div>
               <button type="button" className="text-[13px] font-medium text-accent hover:underline" onClick={() => (setPicked(null), setResults([]))}>
                 Change
@@ -153,7 +160,7 @@ export default function PlanPanel(p: Props) {
                     <button type="button" className="flex w-full flex-col items-start gap-0.5 px-4 py-3 text-left hover:bg-field/60" onClick={() => setPicked(r)}>
                       <span className="text-sm font-medium">{r.title}</span>
                       <span className="text-xs text-muted">
-                        {[formatDate(r.date), r.speaker, STATUS[r.status as TranscriptStatus]?.label, r.manuals ? `${r.manuals} Glory Home` : null].filter(Boolean).join(" · ")}
+                        {[formatDate(r.date), r.speaker, r.branch, STATUS[r.status as TranscriptStatus]?.label, r.manuals ? `${r.manuals} Glory Home` : null].filter(Boolean).join(" · ")}
                       </span>
                     </button>
                   </li>
@@ -172,21 +179,27 @@ export default function PlanPanel(p: Props) {
             </div>
           </div>
           <div>
-            <span className="label">Part</span>
-            <div className="flex items-center gap-2">
-              <input aria-label="Part" className="field w-14 text-center" inputMode="numeric" value={part} onChange={(e) => setPart(e.target.value.replace(/\D/g, ""))} />
-              <span className="text-muted">of</span>
-              <input aria-label="Number of parts" className="field w-14 text-center" inputMode="numeric" value={parts} onChange={(e) => setParts(e.target.value.replace(/\D/g, ""))} />
-            </div>
+            <label htmlFor="plan-parts" className="label">Manuals from this message</label>
+            <select id="plan-parts" className="field" value={parts} onChange={(e) => setParts(e.target.value)}>
+              <option value="0">The writers will say</option>
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-        {Number(parts) > Number(part) && (
-          <p className="-mt-2 text-xs text-muted">
-            {Number(parts) - Number(part) === 1
-              ? `The other part goes on the next free Saturday from ${nextSat}, as ${manualCode(Number(number) + 1)}.`
-              : `The other ${Number(parts) - Number(part)} parts go on the next free Saturdays from ${nextSat}, as ${manualCode(Number(number) + 1)} onwards.`}{" "}
-            You can move them.
-          </p>
+        {parts === "0" ? (
+          <p className="-mt-2 text-xs text-muted">The writers confirm after their first look. If it makes more than one, the later Saturdays move to fit.</p>
+        ) : (
+          Number(parts) > 1 && preview.length > 0 && (
+            <ul className="-mt-1 flex flex-col gap-1 rounded-xl bg-banner p-3 text-[13px]">
+              {preview.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          )
         )}
 
         <div>

@@ -1,18 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState } from "react";
 import { saveManual } from "@/app/actions/glory";
 import type { ActionResult } from "@/app/actions/messages";
-import { STAGES, STAGE_LABEL } from "@/lib/glory";
 
 type Values = {
   title: string;
   number: string;
   saturday: string;
   plannedMonth: string;
-  stage: string;
-  part: string;
-  parts: string;
   membersWriter: string;
   guideWriter: string;
   membersUrl: string;
@@ -29,28 +25,25 @@ export default function ManualForm({ id, values, ownMembers, ownGuide, writers }
     </div>
   );
   return (
-    <form action={action} className="flex flex-col gap-4">
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = new FormData(e.currentTarget);
+        startTransition(() => action(form));
+      }}
+    >
       <datalist id="mf-writers">
         {writers.map((w) => (
           <option key={w} value={w} />
         ))}
       </datalist>
       {field("title", "Topic")}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         {field("number", "Manual number", { inputMode: "numeric", placeholder: "e.g. 195" })}
         {field("saturday", "Saturday", { type: "date" })}
-        <div>
-          <label htmlFor="mf-stage" className="label">Stage</label>
-          <select id="mf-stage" name="stage" defaultValue={values.stage} className="field">
-            {STAGES.map((s) => (
-              <option key={s} value={s}>{STAGE_LABEL[s]}</option>
-            ))}
-          </select>
-        </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-4">
-        {field("part", "Part", { inputMode: "numeric" })}
-        {field("parts", "Of", { inputMode: "numeric" })}
+      <div className="grid gap-4 sm:grid-cols-2">
         {field("membersWriter", "Members Manual by", { list: "mf-writers" })}
         {field("guideWriter", "Teacher’s Guide by", { list: "mf-writers" })}
       </div>

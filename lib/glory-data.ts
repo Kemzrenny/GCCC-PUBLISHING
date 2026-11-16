@@ -2,7 +2,7 @@ import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { gloryConfig } from "@/lib/glory-config";
-import { addMonths, monthKey, nextStep, saturdaysIn, shortDay, teamFor, manualCode, type Stage, type Tone } from "@/lib/glory";
+import { addMonths, monthKey, nextStep, saturdaysIn, shortDay, teamFor, manualCode, partsUrgent, type Stage, type Tone } from "@/lib/glory";
 
 const DAY = 86_400_000;
 
@@ -10,7 +10,7 @@ const DAY = 86_400_000;
 export const LINED_UP: Prisma.ManualWhereInput = { saturday: null, number: null, stage: "PLANNED" };
 
 export const manualInclude = {
-  message: { select: { id: true, title: true, date: true, speaker: true, status: true } },
+  message: { select: { id: true, title: true, date: true, speaker: true, status: true, location: true } },
 } satisfies Prisma.ManualInclude;
 
 export type ManualWithMessage = Prisma.ManualGetPayload<{ include: typeof manualInclude }>;
@@ -44,6 +44,7 @@ export async function thisWeek(now = new Date()): Promise<WeekItem[]> {
   const today = lagosToday(now);
   const soon = await prisma.manual.findMany({
     where: { saturday: { gte: new Date(today.getTime() - 14 * DAY), lte: new Date(today.getTime() + 21 * DAY) } },
+    include: { message: { select: { title: true } } },
     orderBy: { saturday: "asc" },
   });
   const items: (WeekItem & { at: number })[] = [];
@@ -55,6 +56,9 @@ export async function thisWeek(now = new Date()): Promise<WeekItem[]> {
       continue;
     }
     if (m.stage === "TAUGHT") continue;
+    if (!m.partsConfirmed && m.message && (m.stage === "PLANNED" || m.stage === "WRITING")) {
+      items.push({ at: sat.getTime() - 1, tone: partsUrgent(sat, now) ? "late" : "soon", title: `${shortDay(sat)}: how many manuals?`, detail: `The writers haven’t said how many manuals “${m.message.title}” makes.`, manualId: m.id });
+    }
     const step = nextStep(m.stage as Stage, sat, now);
     items.push({ at: sat.getTime(), tone: step.tone, title: `${shortDay(sat)}: ${label}`, detail: step.label.replace(/^Next: /, "Next: "), manualId: m.id });
   }
@@ -145,4 +149,11 @@ export async function manualList(f: ManualFilter) {
     writers: writers.map((w) => w.w),
     years: years.map((y) => y.y),
   };
+}
+
+// Manuals whose documents haven't been checked for a while (for writing progress).
+export function needsProgressCheck(manuals: (ManualWithMessage | null)[], now = Date.now()): string[] {
+  return manuals
+    .filter((m): m is ManualWithMessage => !!m && !!(m.membersDocId || m.guideDocId) && m.stage !== "TAUGHT" && (!m.docsCheckedAt || now - m.docsCheckedAt.getTime() > 15 * 60_000))
+    .map((m) => m.id);
 }

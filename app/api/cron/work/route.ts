@@ -3,7 +3,9 @@ import { checkPodbean, finishLookups } from "@/lib/podbean";
 import { runJobs, kickRunner } from "@/lib/jobs";
 import { syncSheet, sheetConfigured } from "@/lib/sheets";
 import { getSetting, setSetting } from "@/lib/settings";
-import { backupPending } from "@/lib/drive";
+import { backupPending, driveConnected } from "@/lib/drive";
+import { readProgress } from "@/lib/glory-drive";
+import { prisma } from "@/lib/prisma";
 
 // The scheduled round (vercel.json): look for new Podbean episodes, move the transcription
 // queue along, and bring the Google Sheet up to date if anything changed.
@@ -29,6 +31,25 @@ export async function GET(req: Request) {
     if (jobs.remaining > 0) after(kickRunner);
   } catch (err) {
     report.jobs = { error: err instanceof Error ? err.message : String(err) };
+  }
+  // Glory Home writing progress for the manuals coming up.
+  try {
+    if (await driveConnected()) {
+      const now = Date.now();
+      const soon = await prisma.manual.findMany({
+        where: {
+          stage: { not: "TAUGHT" },
+          saturday: { gte: new Date(now - 7 * 86_400_000), lte: new Date(now + 35 * 86_400_000) },
+          OR: [{ membersDocId: { not: null } }, { guideDocId: { not: null } }],
+        },
+        select: { id: true },
+        take: 20,
+      });
+      await readProgress(soon.map((m) => m.id));
+      report.progress = soon.length;
+    }
+  } catch (err) {
+    report.progress = { error: err instanceof Error ? err.message : String(err) };
   }
   try {
     report.drive = await backupPending(25);

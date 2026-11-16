@@ -76,7 +76,7 @@ async function copyFile(token: string, id: string, name: string, parent: string)
 // Fills the template's header ("GLORY HOME MANUAL XXX", "Date (Day, Month, Year)",
 // "Topic - XXXXX"). Needs the Google Docs API turned on; without it the documents are still
 // made, just with the placeholders left in.
-async function fillPlaceholders(token: string, docId: string, pairs: [string, string][]): Promise<boolean> {
+export async function fillPlaceholders(token: string, docId: string, pairs: [string, string][]): Promise<boolean> {
   try {
     await drive(token, `https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
       method: "POST",
@@ -156,4 +156,60 @@ export async function shareWithTeam(): Promise<{ shared: string[] }> {
 export async function gloryRootUrl(): Promise<string | null> {
   const id = await getSetting("gloryRootFolderId");
   return id ? `https://drive.google.com/drive/folders/${id}` : null;
+}
+
+// After a manual moves to another Saturday or number: its documents' header and names follow.
+export async function retitleManualDocs(manualId: string, before: { number: number | null; saturday: Date | null }) {
+  const m = await prisma.manual.findUniqueOrThrow({ where: { id: manualId } });
+  const docs = [
+    { id: m.membersDocId, kind: "members" as const },
+    { id: m.guideDocId, kind: "guide" as const },
+  ].filter((d): d is { id: string; kind: "members" | "guide" } => !!d.id);
+  if (!docs.length) return;
+  const token = await accessToken();
+  const pairs: [string, string][] = [];
+  if (before.number !== m.number && before.number && m.number) pairs.push([`GLORY HOME ${manualCode(before.number)}`, `GLORY HOME ${manualCode(m.number)}`]);
+  if (before.saturday && m.saturday && before.saturday.getTime() !== m.saturday.getTime()) pairs.push([longDate(before.saturday), longDate(m.saturday)]);
+  for (const d of docs) {
+    if (pairs.length) await fillPlaceholders(token, d.id, pairs);
+    await drive(token, `https://www.googleapis.com/drive/v3/files/${d.id}?fields=id`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: docTitle(d.kind, m) }),
+    }).catch(() => {});
+  }
+}
+
+type DocInfo = { modifiedTime?: string; createdTime?: string; lastModifyingUser?: { displayName?: string; emailAddress?: string } };
+
+// Who last worked on a manual's documents, and when. A document only counts as started once
+// someone edits it after the portal made it.
+export async function readProgress(manualIds: string[]) {
+  if (!manualIds.length) return;
+  const manuals = await prisma.manual.findMany({ where: { id: { in: manualIds } } });
+  const token = await accessToken();
+  const read = async (id: string | null) => {
+    if (!id) return null;
+    const f = await drive<DocInfo>(token, `https://www.googleapis.com/drive/v3/files/${id}?fields=modifiedTime,createdTime,lastModifyingUser(displayName,emailAddress)`).catch(() => null);
+    if (!f?.modifiedTime) return null;
+    const edited = new Date(f.modifiedTime);
+    const created = f.createdTime ? new Date(f.createdTime) : null;
+    // The portal fills the header just after copying: that isn't writing.
+    if (created && edited.getTime() - created.getTime() < 5 * 60_000) return { at: null, by: null };
+    return { at: edited, by: f.lastModifyingUser?.displayName ?? f.lastModifyingUser?.emailAddress ?? null };
+  };
+  for (const m of manuals) {
+    const [members, guide] = await Promise.all([read(m.membersDocId), read(m.guideDocId)]);
+    const started = !!(members?.at || guide?.at);
+    await prisma.manual.update({
+      where: { id: m.id },
+      data: {
+        docsCheckedAt: new Date(),
+        ...(members ? { membersEditedAt: members.at, membersEditedBy: members.by } : {}),
+        ...(guide ? { guideEditedAt: guide.at, guideEditedBy: guide.by } : {}),
+        // Someone has started writing: move it on from Planned.
+        ...(started && m.stage === "PLANNED" ? { stage: "WRITING" as const } : {}),
+      },
+    });
+  }
 }

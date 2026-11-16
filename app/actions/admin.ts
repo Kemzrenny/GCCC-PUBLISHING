@@ -61,6 +61,7 @@ const settingsSchema = z
     batchSpeaker: z.string().max(120),
     autoTranscribeNew: z.enum(["0", "1"]),
     manualsWritten: z.coerce.number().int().min(0).max(100000),
+    glorySpeaker: z.string().trim().max(120),
   })
   .partial();
 

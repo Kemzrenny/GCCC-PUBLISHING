@@ -42,6 +42,12 @@ export const SETTING_DEFAULTS = {
   // Emails the Glory Home folder has been shared with.
   gloryShared: "[]",
   gloryLastImport: "",
+  // Branches and the rules that tag each message with one (lib/branches.ts). JSON.
+  branches: "",
+  // Whose messages Glory Home manuals are written from, in order.
+  glorySpeaker: "Pastor Olakunle Zakariya",
+  // What changed on the Glory Home calendar by itself (parts added, manuals moved). JSON.
+  gloryLog: "[]",
   // When Gemini's daily limit is used up, the queue waits until this time (ISO).
   geminiPausedUntil: "",
 } as const;

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Mic } from "lucide-react";
 import ActionButton from "@/components/ActionButton";
-import { advanceManual, makeDocs } from "@/app/actions/glory";
-import { STAGE_LABEL, ADVANCE_LABEL, STAGES, nextStep, manualCode, type Stage } from "@/lib/glory";
+import { makeDocs } from "@/app/actions/glory";
+import { nextStep, manualCode, writingProgress, partsUrgent, type Stage } from "@/lib/glory";
 import { formatDate } from "@/lib/dates";
-import { STATUS } from "@/lib/status";
 import type { ManualWithMessage } from "@/lib/glory-data";
-import { StageBar, TONE_TEXT, TONE_DOT, DocIcon } from "./bits";
+import StageSelect from "./StageSelect";
+import PartsControl from "./PartsControl";
+import { TONE_TEXT, DocIcon } from "./bits";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -20,81 +20,79 @@ export function DayBlock({ date, tone }: { date: Date; tone: "past" | "next" | "
     plain: "bg-banner text-ink",
   }[tone];
   return (
-    <div className={`flex h-[76px] w-[72px] shrink-0 flex-col items-center justify-center rounded-xl ${cls}`}>
-      <span className="text-xs font-semibold tracking-[0.06em]">{DAYS[date.getUTCDay()].toUpperCase()}</span>
-      <span className="font-display text-[28px] leading-none font-semibold">{date.getUTCDate()}</span>
-      <span className="text-xs">{MONTHS[date.getUTCMonth()]}</span>
+    <div className={`flex h-[60px] w-[56px] shrink-0 flex-col items-center justify-center rounded-xl ${cls}`}>
+      <span className="text-[11px] font-semibold tracking-[0.06em]">{DAYS[date.getUTCDay()].toUpperCase()}</span>
+      <span className="font-display text-[22px] leading-none font-semibold">{date.getUTCDate()}</span>
+      <span className="text-[11px]">{MONTHS[date.getUTCMonth()]}</span>
     </div>
   );
 }
 
+// One Saturday's manual: what it is, where it came from, who's writing, and its status.
 export default function ManualCard({ m, dayTone, canEdit }: { m: ManualWithMessage; dayTone: "past" | "next" | "soon" | "plain"; canEdit: boolean }) {
   const stage = m.stage as Stage;
   const step = nextStep(stage, m.saturday);
-  const advance = ADVANCE_LABEL[stage];
-  const writers = [m.membersWriter && `Members Manual: ${m.membersWriter}`, m.guideWriter && `Teacher’s Guide: ${m.guideWriter}`].filter(Boolean).join(" · ");
-  const hasDocs = m.membersUrl || m.guideUrl;
+  const progress = writingProgress(m);
+  const writers = [...new Set([m.membersWriter, m.guideWriter].filter(Boolean))].join(" & ");
+  const title = m.title || m.message?.title || m.sourceTitle;
+  // Once it's reviewed, the split is settled.
+  const askParts = !m.partsConfirmed && (stage === "PLANNED" || stage === "WRITING") && !!m.messageId;
   return (
-    <article className="card flex flex-wrap gap-5 p-5 sm:px-6">
+    <article className="card flex gap-4 p-4 sm:px-5">
       {m.saturday && <DayBlock date={m.saturday} tone={dayTone} />}
-      <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-xs font-semibold tracking-[0.06em] text-accent">{manualCode(m.number) ?? "No number yet"}</span>
-          <Link href={`/glory-home/manuals/${m.id}`} className="font-display text-xl font-semibold hover:underline">
-            {m.title || <span className="text-muted">Topic not set yet</span>}
-          </Link>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13px] text-muted">
-          <Mic aria-hidden size={15} />
-          {m.message ? (
-            <>
-              <Link href={`/messages/${m.message.id}`} className="font-medium text-ink hover:underline">{m.message.title}</Link>
-              <span>{[formatDate(m.message.date), m.message.speaker].filter(Boolean).join(" · ")}</span>
-              {m.message.status !== "APPROVED" && <span>· {m.message.status === "NOT_STARTED" || m.message.status === "FAILED" ? "Not transcribed" : STATUS[m.message.status].label}</span>}
-            </>
-          ) : (
-            <span className="text-alert">{m.sourceTitle ? `“${m.sourceTitle}” isn’t matched to a message yet` : "No message linked"}</span>
-          )}
-          {m.parts && m.parts > 1 && (
-            <span className="rounded-full bg-[var(--chip-blue-bg)] px-2.5 py-0.5 text-xs font-medium text-[var(--chip-blue)]">
-              Part {m.part} of {m.parts}
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-xs font-semibold tracking-[0.06em] text-accent">
+              {manualCode(m.number) ?? "No number yet"}
+              {m.parts && m.parts > 1 ? ` · Part ${m.part} of ${m.parts}` : ""}
             </span>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <StageBar stage={stage} />
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px]">
-            <span>
-              <span className="font-semibold">{STAGE_LABEL[stage]}</span>
-              <span className="text-muted"> · step {STAGES.indexOf(stage) + 1} of 5</span>
-            </span>
-            <span className={`inline-flex items-center gap-1.5 font-medium ${TONE_TEXT[step.tone]}`}>
-              <span aria-hidden className={`size-2 rounded-full ${TONE_DOT[step.tone]}`} />
-              {step.label}
-            </span>
+            <Link href={`/glory-home/manuals/${m.id}`} className="font-display text-lg leading-snug font-semibold hover:underline">
+              {title || <span className="text-muted">No message yet</span>}
+            </Link>
           </div>
+          <StageSelect id={m.id} stage={stage} canEdit={canEdit} />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line pt-3">
-          <span className="text-[13px] text-muted">{writers || "Writers not set"}</span>
-          <div className="flex flex-wrap items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted">
+          {m.message && m.title && (
+            <>
+              <Link href={`/messages/${m.message.id}`} className="hover:text-ink hover:underline">
+                From “{m.message.title}”
+              </Link>
+              <span aria-hidden>·</span>
+            </>
+          )}
+          {m.message && (
+            <>
+              <span>{[formatDate(m.message.date), m.message.location].filter(Boolean).join(", ")}</span>
+              <span aria-hidden>·</span>
+            </>
+          )}
+          {!m.message && <span className="text-alert">Not linked to a message ·</span>}
+          <span className="text-ink">{writers || "No writers"}</span>
+          <span aria-hidden>·</span>
+          <span className={progress.started ? "text-[var(--chip-green)]" : ""}>{progress.label}</span>
+        </div>
+
+        {askParts && canEdit && <PartsControl id={m.id} parts={m.parts ?? 1} confirmed={false} urgent={partsUrgent(m.saturday)} compact />}
+
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <span className={`text-[13px] font-medium ${TONE_TEXT[step.tone]}`}>{step.label.replace(/^Next: /, "")}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
             {m.membersUrl && (
-              <a href={m.membersUrl} target="_blank" rel="noreferrer" className="btn-quiet h-10 gap-1.5 px-3.5 text-[13px]">
-                <DocIcon /> Members Manual
+              <a href={m.membersUrl} target="_blank" rel="noreferrer" className="btn-quiet h-9 gap-1.5 px-3 text-[13px]">
+                <DocIcon /> Members
               </a>
             )}
             {m.guideUrl && (
-              <a href={m.guideUrl} target="_blank" rel="noreferrer" className="btn-quiet h-10 gap-1.5 px-3.5 text-[13px]">
+              <a href={m.guideUrl} target="_blank" rel="noreferrer" className="btn-quiet h-9 gap-1.5 px-3 text-[13px]">
                 <DocIcon /> Teacher’s Guide
               </a>
             )}
-            {canEdit && !hasDocs && stage !== "TAUGHT" && (
-              <ActionButton action={makeDocs.bind(null, m.id)} className="btn-quiet h-10 px-3.5 text-[13px]" pendingLabel="Making documents…">
+            {canEdit && !m.membersUrl && !m.guideUrl && stage !== "TAUGHT" && (
+              <ActionButton action={makeDocs.bind(null, m.id)} className="btn-quiet h-9 px-3 text-[13px]" pendingLabel="Making documents…">
                 Create documents
-              </ActionButton>
-            )}
-            {canEdit && advance && (
-              <ActionButton action={advanceManual.bind(null, m.id)} className="btn-primary h-10 px-3.5 text-[13px]" pendingLabel="Saving…">
-                {advance}
               </ActionButton>
             )}
           </div>

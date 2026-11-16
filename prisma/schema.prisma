@@ -91,6 +91,8 @@ model Message {
   dateCheckedAt  DateTime?
   // A title the AI suggested from the transcript, offered when Podbean's was unusable.
   suggestedTitle String?
+  // The message's main sections, from the transcript: a hint for how many manuals it makes.
+  sections       Json?
 
   status                TranscriptStatus @default(NOT_STARTED)
   // A transcript that lives outside the portal (the old sheet's "Transcription link").
@@ -122,6 +124,7 @@ model Message {
   @@index([status])
   @@index([speaker])
   @@index([needsDetails])
+  @@index([location])
 }
 
 model Transcript {
@@ -235,6 +238,16 @@ model Manual {
   sourceTitle String?
   sourceLink  String?
   notes     String?
+  // The parts made from one message share a series id (the first part's id).
+  seriesId  String?
+  // The writers have said how many manuals the message makes.
+  partsConfirmed Boolean @default(false)
+  // Writing progress, read from the two Google Docs.
+  membersEditedAt DateTime?
+  membersEditedBy String?
+  guideEditedAt   DateTime?
+  guideEditedBy   String?
+  docsCheckedAt   DateTime?
   // Stops the same row or file being imported twice.
   importKey String?  @unique
   // From the old publishing sheet.
@@ -247,6 +260,7 @@ model Manual {
   @@index([messageId])
   @@index([saturday])
   @@index([number])
+  @@index([seriesId])
 }
 
 // Who changed a message's details, and from what. Keeps corrections traceable.

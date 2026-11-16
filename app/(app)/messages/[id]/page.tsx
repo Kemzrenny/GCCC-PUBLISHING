@@ -10,6 +10,7 @@ import { missingDetails, titleKnown } from "@/lib/needs";
 import { PROVIDER_LABELS, isProvider } from "@/lib/transcribe";
 import { StatusChip, Chip } from "@/components/ui";
 import DetailsForm from "@/components/DetailsForm";
+import { branchConfig } from "@/lib/branch-config";
 import { confirmDates } from "@/app/actions/dates";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import { readTimeline } from "@/lib/align";
@@ -42,6 +43,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
   const speakers = reviewer
     ? (await prisma.message.groupBy({ by: ["speaker"], orderBy: { _count: { speaker: "desc" } }, take: 30 })).map((s) => s.speaker).filter((s): s is string => !!s)
     : [];
+  const branches = reviewer ? (await branchConfig()).branches.map((b) => b.name) : [];
   const manuals = m.manuals;
   // The first Saturday from today with no manual, for "Plan a manual from this message".
   const freeSaturday = await (async () => {
@@ -99,6 +101,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                 suggestedTitle={m.suggestedTitle}
                 podbeanTitle={m.podbeanTitle}
                 speakers={speakers}
+                branches={branches}
               />
             </section>
           )}
@@ -270,6 +273,7 @@ export default async function MessagePage({ params }: PageProps<"/messages/[id]"
                   messageId={m.id}
                   initial={{ title: m.title, date: isoDay(m.date), speaker: m.speaker ?? "", series: m.series ?? "", location: m.location ?? "" }}
                   speakers={speakers}
+                  branches={branches}
                   compact
                 />
               </div>

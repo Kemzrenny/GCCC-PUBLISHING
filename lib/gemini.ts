@@ -215,6 +215,56 @@ export async function analyseTranscript(text: string, context: { title?: string 
   }
 }
 
+// ---- Main sections (a hint for how many Glory Home manuals a message makes) ----
+
+const sectionsSchema = {
+  type: "object",
+  properties: {
+    sections: {
+      type: "array",
+      description: "The message's main teaching sections, in the order preached. Usually 1 to 4. Only a distinct line of teaching counts, not an illustration or the prayer.",
+      items: {
+        type: "object",
+        properties: {
+          heading: { type: "string", description: "A short heading in the preacher's own terms." },
+          gist: { type: "string", description: "One sentence on what this section teaches." },
+          scriptures: { type: "array", items: { type: "string" }, description: "Main Bible references in this section." },
+        },
+        required: ["heading", "gist"],
+      },
+    },
+  },
+  required: ["sections"],
+};
+
+const sectionsResult = z.object({
+  sections: z.array(z.object({ heading: z.string(), gist: z.string(), scriptures: z.array(z.string()).optional() })).max(10),
+});
+export type MessageSection = z.infer<typeof sectionsResult>["sections"][number];
+
+// Lists the main sections so writers can judge how many manuals a message makes. It's a
+// starting point only: the writers decide.
+export async function outlineSections(text: string, context: { title?: string | null }): Promise<MessageSection[]> {
+  const LIMIT = 400_000;
+  const body = text.length > LIMIT ? `${text.slice(0, LIMIT / 2)}\n[...]\n${text.slice(-LIMIT / 2)}` : text;
+  const { text: out } = await callGemini(
+    [
+      {
+        type: "text",
+        text: "This is a sermon transcript from Glory Centre Community Church. Writers turn sermons into weekly home-fellowship manuals and need to see its main teaching sections to decide how many manuals it can make without repeating themselves. List the distinct sections faithfully. Don't invent teaching that isn't there.",
+      },
+      { type: "text", text: `${context.title ? `Title: ${context.title}\n\n` : ""}Transcript:\n\n${body}` },
+    ],
+    sectionsSchema,
+    CAREFUL_MODEL,
+  );
+  try {
+    return sectionsResult.parse(JSON.parse(out)).sections;
+  } catch {
+    throw new GeminiError("invalid_output", "Gemini's outline didn't match the expected shape.");
+  }
+}
+
 // ---- Timings (for following along while listening) ----
 
 const timelineSchema = {

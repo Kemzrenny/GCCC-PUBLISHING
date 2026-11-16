@@ -6,7 +6,7 @@ import { TABS } from "@/lib/status";
 
 // The status tabs and the speaker/year filters. Everything lives in the address, so a
 // filtered view can be bookmarked or shared.
-export default function LibraryFilters({ speakers, years }: { speakers: string[]; years: number[] }) {
+export default function LibraryFilters({ speakers, branches, years }: { speakers: string[]; branches: string[]; years: number[] }) {
   const router = useRouter();
   const params = useSearchParams();
   const tab = params.get("tab") ?? "all";
@@ -47,6 +47,22 @@ export default function LibraryFilters({ speakers, years }: { speakers: string[]
           <option key={s} value={s}>{s}</option>
         ))}
       </select>
+      {branches.length > 1 && (
+        <>
+          <label className="sr-only" htmlFor="branch">Branch</label>
+          <select
+            id="branch"
+            className="field h-11 w-auto text-[13px] font-medium"
+            value={params.get("branch") ?? ""}
+            onChange={(e) => router.push(hrefWith("branch", e.target.value))}
+          >
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        </>
+      )}
       <label className="sr-only" htmlFor="year">Year</label>
       <select
         id="year"
