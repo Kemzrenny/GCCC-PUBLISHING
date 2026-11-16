@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import type { Role } from "@prisma/client";
 import { importSheet, saveSettings, inviteMember, removeInvite, updateMember } from "@/app/actions/admin";
 import type { ActionResult } from "@/app/actions/messages";
+import { Section, Row } from "@/components/settings/Section";
 
 function Result({ state }: { state: ActionResult }) {
   if (!state) return null;
@@ -50,59 +51,80 @@ export function TranscriptionSettings({
   providers,
   speakers,
 }: {
-  values: { transcribeProvider: string; batchSize: string; batchOrder: string; batchSpeaker: string; autoTranscribeNew: string; manualsWritten: string };
+  values: { transcribeProvider: string; batchSize: string; batchOrder: string; batchSpeaker: string; autoTranscribeNew: string };
   providers: Provider[];
   // Speakers with messages still to transcribe, and how many.
   speakers: { name: string; ready: number }[];
 }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
   return (
-    <form action={action} className="grid gap-4 sm:grid-cols-2">
+    <form action={action}>
+      <Section title="Preferences" description="How new work is picked and which service writes the text.">
+        <Row title="Transcription service" hint="Gemini also adds the timings and the summary, whichever service writes the text.">
+          <label className="sr-only" htmlFor="provider">Transcription service</label>
+          <select id="provider" name="transcribeProvider" className="field sm:max-w-sm" defaultValue={values.transcribeProvider}>
+            {providers.map((p) => (
+              <option key={p.key} value={p.key} disabled={!p.ready}>
+                {p.label}
+                {p.ready ? "" : " (no API key)"}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row title="New messages" hint="Podbean is checked every hour.">
+          <input type="hidden" name="autoTranscribeNew" value="0" />
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" name="autoTranscribeNew" value="1" defaultChecked={values.autoTranscribeNew === "1"} className="size-5 accent-[var(--button)]" />
+            Transcribe new Podbean messages automatically
+          </label>
+        </Row>
+        <Row title="Batches" hint="What “Queue the next” takes from the backlog.">
+          <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
+            <div>
+              <label className="label" htmlFor="batchSize">Messages</label>
+              <input id="batchSize" name="batchSize" type="number" min={1} max={50} className="field" defaultValue={values.batchSize} />
+            </div>
+            <div>
+              <label className="label" htmlFor="batchOrder">Order</label>
+              <select id="batchOrder" name="batchOrder" className="field" defaultValue={values.batchOrder}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label" htmlFor="batchSpeaker">Speaker</label>
+            <select id="batchSpeaker" name="batchSpeaker" className="field" defaultValue={values.batchSpeaker}>
+              <option value="">Every speaker</option>
+              {values.batchSpeaker && !speakers.some((s) => s.name === values.batchSpeaker) && <option value={values.batchSpeaker}>{values.batchSpeaker} (all done)</option>}
+              {speakers.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name} ({s.ready.toLocaleString()} to do)
+                </option>
+              ))}
+            </select>
+          </div>
+        </Row>
+        <div className="flex flex-wrap items-center gap-3 bg-field/40 px-6 py-4">
+          <button className="btn-primary" disabled={pending}>{pending ? "Saving…" : "Save preferences"}</button>
+          <Result state={state} />
+        </div>
+      </Section>
+    </form>
+  );
+}
+
+// The running total of Glory Home manuals, for the library's count.
+export function ManualsWrittenForm({ value }: { value: string }) {
+  const [state, action, pending] = useActionState<ActionResult, FormData>(saveSettings, null);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3">
       <div>
-        <label className="label" htmlFor="provider">Transcription service</label>
-        <select id="provider" name="transcribeProvider" className="field" defaultValue={values.transcribeProvider}>
-          {providers.map((p) => (
-            <option key={p.key} value={p.key} disabled={!p.ready}>
-              {p.label}{p.ready ? "" : " (no API key)"}
-            </option>
-          ))}
-        </select>
+        <label className="label" htmlFor="manualsWritten">Manuals written so far</label>
+        <input id="manualsWritten" name="manualsWritten" type="number" min={0} className="field w-36" defaultValue={value} />
       </div>
-      <div>
-        <label className="label" htmlFor="batchSize">Messages per batch</label>
-        <input id="batchSize" name="batchSize" type="number" min={1} max={50} className="field" defaultValue={values.batchSize} />
-      </div>
-      <div>
-        <label className="label" htmlFor="batchOrder">Work through the backlog</label>
-        <select id="batchOrder" name="batchOrder" className="field" defaultValue={values.batchOrder}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-        </select>
-      </div>
-      <div>
-        <label className="label" htmlFor="batchSpeaker">Batches take messages by</label>
-        <select id="batchSpeaker" name="batchSpeaker" className="field" defaultValue={values.batchSpeaker}>
-          <option value="">Every speaker</option>
-          {values.batchSpeaker && !speakers.some((s) => s.name === values.batchSpeaker) && <option value={values.batchSpeaker}>{values.batchSpeaker} (all done)</option>}
-          {speakers.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name} ({s.ready.toLocaleString()} to do)
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="label" htmlFor="manualsWritten">Glory Home manuals written so far</label>
-        <input id="manualsWritten" name="manualsWritten" type="number" min={0} className="field" defaultValue={values.manualsWritten} />
-      </div>
-      <label className="flex items-center gap-3 text-sm sm:col-span-2">
-        <input type="checkbox" name="autoTranscribeNew" defaultChecked={values.autoTranscribeNew === "1"} className="size-5 accent-[var(--button)]" />
-        Transcribe new Podbean messages automatically
-      </label>
-      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button className="btn-primary" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
-        <Result state={state} />
-      </div>
+      <button className="btn-quiet" disabled={pending}>{pending ? "Saving…" : "Save"}</button>
+      <Result state={state} />
     </form>
   );
 }

@@ -1,13 +1,11 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { currentUser } from "@/lib/auth";
 import { speakerCounts } from "@/lib/speakers";
 import { groupSpeakers } from "@/lib/speaker-groups";
-import { PageHeading, Empty } from "@/components/ui";
+import { Empty } from "@/components/ui";
 import { GroupCard, SpeakerRow } from "@/components/SpeakerTools";
 
-export const metadata = { title: "Speakers" };
+export const metadata = { title: "Settings · Speakers" };
 
 export default async function SpeakersPage() {
   const user = await currentUser();
@@ -17,14 +15,10 @@ export default async function SpeakersPage() {
 
   return (
     <>
-      <Link href="/settings" className="inline-flex items-center gap-1.5 self-start text-sm text-muted hover:text-ink">
-        <ArrowLeft aria-hidden size={16} /> Settings
-      </Link>
-      <PageHeading
-        eyebrow="Speakers"
-        title="One name per minister."
-        lead="Merge spellings of the same person so the library’s speaker filter and the counts are right. The portal remembers each merge, so new messages from Podbean and the sheet get the right name too."
-      />
+      <p className="max-w-3xl text-sm text-muted">
+        One name per minister. Merge spellings of the same person so the library’s speaker filter and the counts are right. The portal remembers each merge, so new
+        messages from Podbean and the sheet get the right name too.
+      </p>
 
       <datalist id="speaker-names">
         {speakers.map((s) => (
@@ -33,7 +27,7 @@ export default async function SpeakersPage() {
       </datalist>
 
       <section className="flex flex-col gap-4">
-        <h2 className="font-display text-2xl font-semibold">Probably the same person</h2>
+        <h2 className="font-display text-xl font-semibold">Probably the same person</h2>
         {groups.length === 0 ? (
           <div className="card">
             <Empty title="No duplicates spotted">Use the full list below to rename or merge any others.</Empty>
@@ -51,7 +45,7 @@ export default async function SpeakersPage() {
       </section>
 
       <section className="card flex flex-col gap-3 p-6">
-        <h2 className="font-display text-2xl font-semibold">All speakers ({speakers.length})</h2>
+        <h2 className="font-display text-xl font-semibold">All speakers ({speakers.length})</h2>
         <p className="text-sm text-muted">
           Type another speaker’s name to merge into them, or a corrected spelling to rename. Use <strong className="text-ink">Not a speaker</strong> for
           entries like the church’s name.

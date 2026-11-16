@@ -45,7 +45,7 @@ export async function syncSheetNow(): Promise<ActionResult> {
   try {
     await requireUser(["ADMIN"]);
     const { rows } = await syncSheet();
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: `Sheet updated with ${rows} messages.` };
   } catch (err) {
     await setSetting("sheetLastError", err instanceof Error ? err.message : "Sync failed").catch(() => {});
@@ -53,40 +53,37 @@ export async function syncSheetNow(): Promise<ActionResult> {
   }
 }
 
-const settingsSchema = z.object({
-  transcribeProvider: z.string(),
-  batchSize: z.coerce.number().int().min(1).max(50),
-  batchOrder: z.enum(["newest", "oldest"]),
-  batchSpeaker: z.string().max(120),
-  autoTranscribeNew: z.enum(["0", "1"]),
-  manualsWritten: z.coerce.number().int().min(0).max(100000),
-});
+const settingsSchema = z
+  .object({
+    transcribeProvider: z.string(),
+    batchSize: z.coerce.number().int().min(1).max(50),
+    batchOrder: z.enum(["newest", "oldest"]),
+    batchSpeaker: z.string().max(120),
+    autoTranscribeNew: z.enum(["0", "1"]),
+    manualsWritten: z.coerce.number().int().min(0).max(100000),
+  })
+  .partial();
 
+// Saves whichever settings the form sent (Settings has several smaller forms).
 export async function saveSettings(_: ActionResult, form: FormData): Promise<ActionResult> {
   try {
     await requireUser(["ADMIN"]);
-    const parsed = settingsSchema.safeParse({
-      transcribeProvider: form.get("transcribeProvider"),
-      batchSize: form.get("batchSize"),
-      batchOrder: form.get("batchOrder"),
-      batchSpeaker: String(form.get("batchSpeaker") ?? ""),
-      autoTranscribeNew: form.get("autoTranscribeNew") === "on" ? "1" : "0",
-      manualsWritten: form.get("manualsWritten"),
-    });
+    const raw: Record<string, string> = {};
+    for (const key of Object.keys(settingsSchema.shape)) {
+      // A checkbox sends a hidden "0" then "1" when ticked: the last value wins.
+      const values = form.getAll(key);
+      if (values.length) raw[key] = String(values[values.length - 1]);
+    }
+    const parsed = settingsSchema.safeParse(raw);
     if (!parsed.success) return { error: parsed.error.issues[0].message };
     const s = parsed.data;
-    if (!isProvider(s.transcribeProvider)) return { error: "Pick a transcription service." };
-    if (!providerConfigured(s.transcribeProvider)) return { error: "That service's API key isn't set up yet." };
-    await Promise.all([
-      setSetting("transcribeProvider", s.transcribeProvider),
-      setSetting("batchSize", String(s.batchSize)),
-      setSetting("batchOrder", s.batchOrder),
-      setSetting("batchSpeaker", s.batchSpeaker),
-      setSetting("autoTranscribeNew", s.autoTranscribeNew),
-      setSetting("manualsWritten", String(s.manualsWritten)),
-    ]);
+    if (s.transcribeProvider !== undefined) {
+      if (!isProvider(s.transcribeProvider)) return { error: "Pick a transcription service." };
+      if (!providerConfigured(s.transcribeProvider)) return { error: "That service's API key isn't set up yet." };
+    }
+    await Promise.all(Object.entries(s).map(([key, value]) => setSetting(key as keyof typeof s, String(value))));
     revalidatePath("/", "layout");
-    return { ok: "Settings saved." };
+    return { ok: "Saved." };
   } catch (err) {
     return fail(err);
   }
@@ -105,7 +102,7 @@ export async function inviteMember(_: ActionResult, form: FormData): Promise<Act
       create: { email: email.data, role: role as Role, invitedById: me.id },
       update: { role: role as Role },
     });
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: `Invited ${email.data}. They can now create their account on the sign-in page.` };
   } catch (err) {
     return fail(err);
@@ -116,7 +113,7 @@ export async function removeInvite(email: string): Promise<ActionResult> {
   try {
     await requireUser(["ADMIN"]);
     await prisma.invite.delete({ where: { email } }).catch(() => {});
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: "Invite removed." };
   } catch (err) {
     return fail(err);
@@ -135,7 +132,7 @@ export async function updateMember(userId: string, change: { role?: Role; disabl
         ...(change.disabled === undefined ? {} : { disabledAt: change.disabled ? new Date() : null }),
       },
     });
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: "Updated." };
   } catch (err) {
     return fail(err);
@@ -173,7 +170,7 @@ export async function backupAllNow(): Promise<ActionResult> {
       remaining = r.remaining;
       if (r.failed || (!r.done && !r.failed)) break;
     } while (remaining > 0 && Date.now() - started < 210_000);
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     if (failed) return { error: `Backed up ${done}; ${failed} failed. See the problem below.` };
     return { ok: remaining ? `Backed up ${done}. ${remaining} left: click again, or they'll finish in the scheduled rounds.` : `All transcripts are backed up (${done} just now).` };
   } catch (err) {
@@ -185,7 +182,7 @@ export async function disconnectGoogleDrive(): Promise<ActionResult> {
   try {
     await requireUser(["ADMIN"]);
     await disconnectDrive();
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: "Disconnected. Existing Docs stay in Drive." };
   } catch (err) {
     return fail(err);

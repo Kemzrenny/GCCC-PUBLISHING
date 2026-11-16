@@ -63,7 +63,7 @@ export default async function ManualsPage({ searchParams }: PageProps<"/glory-ho
           <summary className="cursor-pointer font-display text-[22px] font-semibold">Bringing in the manuals you’ve already done</summary>
           {!connected ? (
             <p className="mt-3 text-sm">
-              First connect Google Drive in <Link href="/settings#drive" className="font-medium text-accent hover:underline">Settings</Link>: the Glory Home folder is made in that account.
+              First connect Google Drive in <Link href="/settings/connections#drive" className="font-medium text-accent hover:underline">Settings</Link>: the Glory Home folder is made in that account.
             </p>
           ) : (
             <ol className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3">

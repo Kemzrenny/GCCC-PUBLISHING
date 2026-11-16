@@ -8,7 +8,7 @@ import { appUrl } from "@/lib/site";
 export async function GET() {
   const user = await optionalUser();
   if (!user || user.role !== "ADMIN") return NextResponse.redirect(`${appUrl()}/login`);
-  if (!driveClientConfigured()) return NextResponse.redirect(`${appUrl()}/settings?drive=missing-client`);
+  if (!driveClientConfigured()) return NextResponse.redirect(`${appUrl()}/settings/connections?drive=missing-client`);
   const state = newState();
   (await cookies()).set("gccc_google_state", state, {
     httpOnly: true,

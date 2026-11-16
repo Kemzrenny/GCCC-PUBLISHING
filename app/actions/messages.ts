@@ -107,7 +107,7 @@ export async function queueTimingsBatch(): Promise<ActionResult> {
     const queued = await enqueueTimings(null, Number(s.batchSize) || 10);
     if (!queued) return { ok: "Every transcript with audio already has timings." };
     after(kickRunner);
-    revalidatePath("/settings");
+    revalidatePath("/settings", "layout");
     return { ok: `Adding timings to ${queued} transcript${queued === 1 ? "" : "s"}.` };
   } catch (err) {
     return fail(err);

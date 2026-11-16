@@ -9,6 +9,9 @@ const NAMES: Record<string, string> = {
   settings: "Settings",
   "glory-home": "Glory Home",
   speakers: "Speakers",
+  connections: "Connections",
+  team: "Team",
+  import: "Import",
 };
 
 export default function Breadcrumb() {

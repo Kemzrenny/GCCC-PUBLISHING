@@ -6,7 +6,7 @@ import { appUrl } from "@/lib/site";
 
 // Google sends the admin back here after they allow (or refuse) Drive access.
 export async function GET(req: Request) {
-  const back = (result: string) => NextResponse.redirect(`${appUrl()}/settings?drive=${encodeURIComponent(result)}#drive`);
+  const back = (result: string) => NextResponse.redirect(`${appUrl()}/settings/connections?drive=${encodeURIComponent(result)}#drive`);
   const user = await optionalUser();
   if (!user || user.role !== "ADMIN") return NextResponse.redirect(`${appUrl()}/login`);
   const url = new URL(req.url);
